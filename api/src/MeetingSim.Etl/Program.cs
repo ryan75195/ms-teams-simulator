@@ -2,7 +2,8 @@
 using MeetingSim.Etl.Moderator;
 using OpenAI.Chat;
 
-const string ModelName = "gpt-4o-mini";
+const string ModelName = "gpt-5-mini";
+const int RecentSpeakersWindow = 2;
 
 var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
 if (string.IsNullOrWhiteSpace(apiKey))
@@ -27,6 +28,7 @@ var client = new ChatClient(model: ModelName, apiKey: apiKey);
 var moderator = new ModeratorService(client, roster);
 
 var seen = new List<string>();
+var recentSpeakers = new Queue<string>();
 var totalElapsedMs = 0.0;
 
 for (var i = 0; i < transcript.Length; i++)
@@ -38,7 +40,7 @@ for (var i = 0; i < transcript.Length; i++)
     Console.WriteLine(new string('-', 78));
 
     var start = DateTimeOffset.UtcNow;
-    var decision = await moderator.DecideAsync(chunk, seen);
+    var decision = await moderator.DecideAsync(chunk, seen, recentSpeakers.ToList());
     var elapsedMs = (DateTimeOffset.UtcNow - start).TotalMilliseconds;
     totalElapsedMs += elapsedMs;
 
@@ -51,6 +53,15 @@ for (var i = 0; i < transcript.Length; i++)
     Console.WriteLine($"Latency    : {elapsedMs:F0} ms");
 
     seen.Add(chunk);
+
+    if (!string.Equals(decision.Action, "none", StringComparison.OrdinalIgnoreCase) && decision.PersonaId is { } speaker)
+    {
+        recentSpeakers.Enqueue(speaker);
+        while (recentSpeakers.Count > RecentSpeakersWindow)
+        {
+            recentSpeakers.Dequeue();
+        }
+    }
 }
 
 Console.WriteLine();

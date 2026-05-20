@@ -48,7 +48,10 @@ internal static class PromptBuilder
         return sb.ToString();
     }
 
-    public static string BuildUserPrompt(string currentChunk, IReadOnlyList<string> recentChunks)
+    public static string BuildUserPrompt(
+        string currentChunk,
+        IReadOnlyList<string> recentChunks,
+        IReadOnlyList<string> recentSpeakers)
     {
         var sb = new StringBuilder();
         IReadOnlyList<string> context = recentChunks.Count > MaxContextChunks
@@ -63,6 +66,15 @@ internal static class PromptBuilder
                 sb.Append("> ");
                 sb.AppendLine(chunk);
             }
+            sb.AppendLine();
+        }
+
+        if (recentSpeakers.Count > 0)
+        {
+            sb.Append("Recently spoke: ");
+            sb.Append(string.Join(", ", recentSpeakers));
+            sb.AppendLine(".");
+            sb.AppendLine("Pick someone else unless the presenter directly addresses one of them by name.");
             sb.AppendLine();
         }
 
