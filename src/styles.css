@@ -62,6 +62,13 @@ input {
   font: inherit;
 }
 
+.app-root {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: transparent;
+}
+
 /* ─── App window ───────────────────────────────────── */
 .teams-app {
   position: relative;
