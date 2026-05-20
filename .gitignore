@@ -5,6 +5,12 @@ release/
 .vite/
 .cache/
 
+# .NET (api/)
+api/**/bin/
+api/**/obj/
+**/.vs/
+*.user
+
 # Logs
 *.log
 npm-debug.log*

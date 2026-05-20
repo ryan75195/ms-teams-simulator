@@ -40,7 +40,7 @@ npm run dist:dir         # unpacked test build into release/win-unpacked/
 ## Project layout
 
 ```
-src/
+src/                      # React renderer
   main.jsx                # App composition + entry
   constants.js            # Names, palette, prompts, sim tunables
   helpers.js              # initials, formatElapsed, formatChatTime, makeParticipant
@@ -58,7 +58,30 @@ electron/
   preload.cjs             # Sandboxed bridge: electronApp + windowControls
 build/
   icon.png                # 512×512 app icon
+api/                      # .NET 10 session API (see api/CLAUDE.md)
+  MeetingSim.slnx
+  src/
+    MeetingSim.Core/      # Domain — sessions, personas, events
+    MeetingSim.Api/       # HTTP + SignalR hub
+    MeetingSim.Etl/       # Background workers (STT, moderator, persona, TTS)
+    MeetingSim.Analyzers/ # CI0001–CI0013 style guards
+  tests/
+    MeetingSim.Tests.Unit/
+    MeetingSim.Tests.Integration/
+    MeetingSim.Tests.Architecture/
+    MeetingSim.Tests.Analyzers/
 ```
+
+## API
+
+The session API is scaffolded from the [`dotnet-agent-harness`](https://github.com/ryan75195/dotnet-agent-harness) `etl-api` template. It will hold session state, run the AI moderator + persona agents on a transcript stream, and fan out events to renderer clients over SignalR. Slice 1 (this commit) is the scaffold only — endpoints land in subsequent slices.
+
+```bash
+dotnet build api/MeetingSim.slnx
+dotnet test  api/MeetingSim.slnx
+```
+
+The repo follows the harness's lifecycle (issue → `feat/<N>-<slug>` branch → squash-merge) for any change touching `api/**`. Pure-frontend commits short-circuit through `.githooks/pre-commit` without running .NET checks. See [`api/CLAUDE.md`](api/CLAUDE.md) for the full .NET-side rules.
 
 ## Keyboard shortcuts
 
