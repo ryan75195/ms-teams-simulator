@@ -2,7 +2,7 @@
 using MeetingSim.Etl.Moderator;
 using OpenAI.Chat;
 
-const string ModelName = "gpt-5-mini";
+const string DefaultModelName = "gpt-4o-mini";
 const int RecentSpeakersWindow = 2;
 
 var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -11,6 +11,9 @@ if (string.IsNullOrWhiteSpace(apiKey))
     await Console.Error.WriteLineAsync("OPENAI_API_KEY is not set. Set it in your environment and re-run.");
     return 1;
 }
+
+var modelName = args.Length > 0 ? args[0] : DefaultModelName;
+Console.WriteLine($"Moderator model: {modelName}");
 
 var roster = new PersonaRepository(new CrowdService()).Roster;
 
@@ -24,7 +27,7 @@ var transcript = new[]
     "Any questions before we move on to NAMER?",
 };
 
-var client = new ChatClient(model: ModelName, apiKey: apiKey);
+var client = new ChatClient(model: modelName, apiKey: apiKey);
 var moderator = new ModeratorService(client, roster);
 
 var seen = new List<string>();
