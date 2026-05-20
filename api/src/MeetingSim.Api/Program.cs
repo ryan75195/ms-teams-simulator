@@ -1,4 +1,5 @@
-﻿using MeetingSim.Api.Sessions;
+﻿using MeetingSim.Api.Personas;
+using MeetingSim.Api.Sessions;
 using MeetingSim.Core;
 
 const string RendererCorsPolicy = "renderer";
@@ -19,5 +20,6 @@ var app = builder.Build();
 
 app.UseCors(RendererCorsPolicy);
 app.MapSessionEndpoints();
+app.MapPersonaEndpoints();
 
 app.Run();
