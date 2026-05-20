@@ -1,0 +1,22 @@
+node_modules/
+dist/
+dist-electron/
+release/
+.vite/
+.cache/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
+
+# Playwright / scratch screenshots
+.playwright-mcp/
+teams-current.png
+teams-fullpage.png
+teams-v2-*.png
