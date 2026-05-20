@@ -1,12 +1,108 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Teams Call Simulator</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='6'%20fill='%235B5FC7'/%3E%3Ctext%20x='16'%20y='23'%20text-anchor='middle'%20fill='white'%20font-family='Segoe%20UI,%20Arial'%20font-size='21'%20font-weight='700'%3ET%3C/text%3E%3C/svg%3E"
+    />
+    <style>
+      /* Inline pre-React skeleton. Replaced as soon as React mounts. */
+      html, body { margin: 0; height: 100%; background: #f3f2f1; }
+      body { font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+      #root { min-height: 100vh; display: grid; place-items: center; }
+      .boot {
+        width: min(96vw, 1520px);
+        height: min(92vh, 900px);
+        background: #1f1f1f;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 24px 60px -16px rgba(0,0,0,0.28), 0 8px 20px -10px rgba(0,0,0,0.22);
+        display: grid;
+        grid-template-rows: 48px 1fr;
+      }
+      .boot-bar {
+        background: #292929;
+        border-bottom: 1px solid rgba(0,0,0,0.45);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-left: 16px;
+      }
+      .boot-icon {
+        width: 30px; height: 30px;
+        background: #1a1a1a;
+        border-radius: 6px;
+        display: grid; place-items: center;
+        color: #fff;
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .boot-title {
+        display: flex; flex-direction: column;
+        line-height: 1.2;
+      }
+      .boot-title b { color: #fff; font-size: 13px; font-weight: 600; }
+      .boot-title span { color: #adadad; font-size: 11px; }
+      .boot-stage {
+        padding: 8px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        grid-template-rows: repeat(3, 1fr);
+        gap: 8px;
+        background: #1f1f1f;
+      }
+      .boot-tile {
+        background: linear-gradient(115deg, #2e2e2e 0%, #383838 50%, #2e2e2e 100%);
+        background-size: 200% 100%;
+        border-radius: 10px;
+        animation: bootShimmer 1.6s linear infinite;
+      }
+      .boot-tile:nth-child(1) { animation-delay: 0s; }
+      .boot-tile:nth-child(2) { animation-delay: .08s; }
+      .boot-tile:nth-child(3) { animation-delay: .16s; }
+      .boot-tile:nth-child(4) { animation-delay: .24s; }
+      .boot-tile:nth-child(5) { animation-delay: .32s; }
+      .boot-tile:nth-child(6) { animation-delay: .40s; }
+      .boot-tile:nth-child(7) { animation-delay: .48s; }
+      .boot-tile:nth-child(8) { animation-delay: .56s; }
+      .boot-tile:nth-child(9) { animation-delay: .64s; }
+      @keyframes bootShimmer {
+        0% { background-position: 100% 0; }
+        100% { background-position: -100% 0; }
+      }
+      html.is-electron, html.is-electron body { background: #1f1f1f; }
+      html.is-electron #root { display: block; }
+      html.is-electron .boot { width: 100vw; height: 100vh; border-radius: 0; box-shadow: none; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot" aria-hidden="true">
+        <div class="boot-bar">
+          <div class="boot-icon">T</div>
+          <div class="boot-title">
+            <b>Sales Report — Q2 Review</b>
+            <span>Loading…</span>
+          </div>
+        </div>
+        <div class="boot-stage">
+          <div class="boot-tile"></div><div class="boot-tile"></div><div class="boot-tile"></div>
+          <div class="boot-tile"></div><div class="boot-tile"></div><div class="boot-tile"></div>
+          <div class="boot-tile"></div><div class="boot-tile"></div><div class="boot-tile"></div>
+        </div>
+      </div>
+    </div>
+    <script>
+      // Set the html class as early as possible so the skeleton matches
+      // the eventual layout in Electron (no centered window, no radius).
+      if (window.electronApp && window.electronApp.isElectron) {
+        document.documentElement.classList.add("is-electron");
+      }
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

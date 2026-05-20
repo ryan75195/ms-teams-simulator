@@ -86,6 +86,41 @@ function App() {
     return () => window.clearInterval(t);
   }, []);
 
+  // Tag the document root once when running inside Electron so the CSS
+  // can drop the centered-window styling and fill the OS window instead.
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.electronApp?.isElectron) {
+      document.documentElement.classList.add("is-electron");
+    }
+  }, []);
+
+  // Teams-style keyboard shortcuts. Functional setters keep this stable.
+  useEffect(() => {
+    function onKey(e) {
+      const k = e.key.toLowerCase();
+      if (e.ctrlKey && e.shiftKey) {
+        if (k === "m") {
+          e.preventDefault();
+          setMuted((v) => !v);
+        } else if (k === "o") {
+          e.preventDefault();
+          setCameraOff((v) => !v);
+        } else if (k === "k") {
+          e.preventDefault();
+          setHandRaised((v) => !v);
+        }
+      } else if (e.ctrlKey && !e.shiftKey && k === "e") {
+        const target = e.target;
+        const tag = target?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
+        e.preventDefault();
+        setRightPane((rp) => (rp === "chat" ? null : "chat"));
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // Mirror user-controlled flags onto participants[YOU_INDEX].
   useEffect(() => {
     setParticipants((prev) => {

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Tooltip } from "@fluentui/react-components";
 import {
   CameraOffRegular,
@@ -31,6 +32,90 @@ function IconButton({ label, icon, active, onClick, badge, danger }) {
         )}
       </button>
     </Tooltip>
+  );
+}
+
+function WindowControls() {
+  const api = typeof window !== "undefined" ? window.windowControls : null;
+  const [isMax, setIsMax] = useState(false);
+
+  useEffect(() => {
+    if (!api) return undefined;
+    let cancelled = false;
+    api.isMaximized?.().then((v) => {
+      if (!cancelled) setIsMax(Boolean(v));
+    });
+    const off = api.onMaximizedChange?.(setIsMax);
+    return () => {
+      cancelled = true;
+      off?.();
+    };
+  }, [api]);
+
+  if (!api) return null;
+
+  return (
+    <div className="window-controls" aria-label="Window controls">
+      <button
+        type="button"
+        className="window-btn"
+        onClick={api.minimize}
+        aria-label="Minimize"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M0 5h10" stroke="currentColor" strokeWidth="1" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="window-btn"
+        onClick={api.toggleMaximize}
+        aria-label={isMax ? "Restore" : "Maximize"}
+      >
+        {isMax ? (
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <rect
+              x="0.5"
+              y="2.5"
+              width="6.5"
+              height="6.5"
+              stroke="currentColor"
+              fill="none"
+            />
+            <path
+              d="M2.5 2.5V0.5H9.5V7.5H7"
+              stroke="currentColor"
+              fill="none"
+            />
+          </svg>
+        ) : (
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <rect
+              x="0.5"
+              y="0.5"
+              width="9"
+              height="9"
+              stroke="currentColor"
+              fill="none"
+            />
+          </svg>
+        )}
+      </button>
+      <button
+        type="button"
+        className="window-btn window-btn--close"
+        onClick={api.close}
+        aria-label="Close"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path
+            d="M0 0L10 10M10 0L0 10"
+            stroke="currentColor"
+            strokeWidth="1"
+          />
+        </svg>
+      </button>
+    </div>
   );
 }
 
@@ -137,6 +222,7 @@ export function Ribbon({
           Leave
         </button>
       </nav>
+      <WindowControls />
     </header>
   );
 }

@@ -69,6 +69,27 @@ input {
   background: transparent;
 }
 
+/* Electron: the BrowserWindow is the chrome, so the simulator fills it. */
+html.is-electron,
+html.is-electron body {
+  background: #1f1f1f;
+  height: 100%;
+}
+
+html.is-electron .app-root {
+  display: block;
+  min-height: 100vh;
+  padding: 0;
+}
+
+html.is-electron .teams-app {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 /* ─── App window ───────────────────────────────────── */
 .teams-app {
   position: relative;
@@ -87,20 +108,22 @@ input {
 
 /* ─── Ribbon ───────────────────────────────────────── */
 .ribbon {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
   gap: 12px;
   height: 48px;
-  padding: 0 12px 0 16px;
+  padding-left: 16px;
   background: var(--bg-ribbon);
   border-bottom: 1px solid rgba(0, 0, 0, 0.45);
+  -webkit-app-region: drag;
+  app-region: drag;
 }
 
 .ribbon-left {
   display: flex;
   align-items: center;
   gap: 14px;
+  flex: 1 1 auto;
   min-width: 0;
   color: var(--text-secondary);
   font-size: 12px;
@@ -193,6 +216,8 @@ input {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex: 0 0 auto;
+  padding-right: 8px;
 }
 
 .ribbon-divider {
@@ -215,6 +240,8 @@ input {
   border: none;
   border-radius: 4px;
   cursor: pointer;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 
@@ -285,8 +312,47 @@ input {
   font-weight: 600;
   letter-spacing: 0.01em;
   cursor: pointer;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
   transition: background-color 0.12s ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+/* ─── Window controls (frameless Electron) ─────────── */
+.window-controls {
+  display: flex;
+  align-items: stretch;
+  height: 48px;
+  flex: 0 0 auto;
+}
+
+.window-btn {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 100%;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.window-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.window-btn--close:hover {
+  background: #c42b1c;
+  color: white;
+}
+
+.window-btn svg {
+  width: 10px;
+  height: 10px;
 }
 
 .leave-btn:hover {
