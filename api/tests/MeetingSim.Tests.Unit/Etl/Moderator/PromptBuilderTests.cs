@@ -6,6 +6,9 @@ namespace MeetingSim.Tests.Unit.Etl.Moderator;
 [TestFixture]
 public class PromptBuilderTests
 {
+    private static readonly IReadOnlyList<string> NoRecentSpeakers = [];
+    private static readonly IReadOnlyList<string> NoRecentChunks = [];
+
     private static IReadOnlyList<Persona> NewRoster() =>
         new PersonaRepository(new CrowdService()).Roster;
 
@@ -56,7 +59,7 @@ public class PromptBuilderTests
     [Test]
     public void Should_include_the_current_chunk_in_the_user_prompt()
     {
-        var prompt = PromptBuilder.BuildUserPrompt("EMEA is up 18%", new List<string>());
+        var prompt = PromptBuilder.BuildUserPrompt("EMEA is up 18%", NoRecentChunks, NoRecentSpeakers);
 
         Assert.That(prompt, Does.Contain("EMEA is up 18%"));
         Assert.That(prompt, Does.Contain("Presenter just said:"));
@@ -67,7 +70,8 @@ public class PromptBuilderTests
     {
         var prompt = PromptBuilder.BuildUserPrompt(
             "Any questions?",
-            new[] { "Welcome.", "Pipeline up 18%." });
+            new[] { "Welcome.", "Pipeline up 18%." },
+            NoRecentSpeakers);
 
         Assert.Multiple(() =>
         {
@@ -80,8 +84,33 @@ public class PromptBuilderTests
     [Test]
     public void Should_skip_the_context_section_when_no_recent_chunks()
     {
-        var prompt = PromptBuilder.BuildUserPrompt("Welcome.", new List<string>());
+        var prompt = PromptBuilder.BuildUserPrompt("Welcome.", NoRecentChunks, NoRecentSpeakers);
 
         Assert.That(prompt, Does.Not.Contain("Recent transcript so far:"));
+    }
+
+    [Test]
+    public void Should_include_recent_speakers_with_steering_in_the_user_prompt()
+    {
+        var prompt = PromptBuilder.BuildUserPrompt(
+            "Now on to NAMER.",
+            NoRecentChunks,
+            new[] { "anuj", "serena" });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(prompt, Does.Contain("Recently spoke: anuj, serena"));
+            Assert.That(prompt, Does.Contain("Pick someone else"));
+            Assert.That(prompt, Does.Contain("unless the presenter directly addresses one of them"));
+        });
+    }
+
+    [Test]
+    public void Should_skip_the_recent_speakers_section_when_no_speakers_given()
+    {
+        var prompt = PromptBuilder.BuildUserPrompt("Hello.", NoRecentChunks, NoRecentSpeakers);
+
+        Assert.That(prompt, Does.Not.Contain("Recently spoke:"));
+        Assert.That(prompt, Does.Not.Contain("Pick someone else"));
     }
 }

@@ -9,21 +9,6 @@ internal sealed class ModeratorService
 {
     private const string SchemaName = "moderator_decision";
 
-    private const string SchemaJson = """
-    {
-      "type": "object",
-      "properties": {
-        "action":     { "type": "string", "enum": ["speak", "chat", "hand-raise", "none"] },
-        "personaId":  { "type": ["string", "null"] },
-        "text":       { "type": ["string", "null"] },
-        "raised":     { "type": ["boolean", "null"] },
-        "reasoning":  { "type": "string" }
-      },
-      "required": ["action", "personaId", "text", "raised", "reasoning"],
-      "additionalProperties": false
-    }
-    """;
-
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -31,20 +16,23 @@ internal sealed class ModeratorService
 
     private readonly ChatClient _client;
     private readonly IReadOnlyList<Persona> _roster;
+    private readonly BinaryData _schemaPayload;
 
     public ModeratorService(ChatClient client, IReadOnlyList<Persona> roster)
     {
         _client = client;
         _roster = roster;
+        _schemaPayload = BinaryData.FromString(SchemaBuilder.BuildModeratorDecisionSchema(roster));
     }
 
     public async Task<ModeratorDecision> DecideAsync(
         string currentChunk,
         IReadOnlyList<string> recentChunks,
+        IReadOnlyList<string> recentSpeakers,
         CancellationToken cancellationToken = default)
     {
         var systemPrompt = PromptBuilder.BuildSystemPrompt(_roster);
-        var userPrompt = PromptBuilder.BuildUserPrompt(currentChunk, recentChunks);
+        var userPrompt = PromptBuilder.BuildUserPrompt(currentChunk, recentChunks, recentSpeakers);
 
         var messages = new ChatMessage[]
         {
@@ -56,9 +44,8 @@ internal sealed class ModeratorService
         {
             ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
                 jsonSchemaFormatName: SchemaName,
-                jsonSchema: BinaryData.FromString(SchemaJson),
+                jsonSchema: _schemaPayload,
                 jsonSchemaIsStrict: true),
-            Temperature = 0.4f,
         };
 
         ClientResult<ChatCompletion> completion = await _client
