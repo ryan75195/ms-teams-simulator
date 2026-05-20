@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using MeetingSim.Core.Sessions;
+using MeetingSim.Core.Sessions.Interfaces;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace MeetingSim.Core;
 
@@ -6,6 +8,7 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddCoreServices(this IServiceCollection services)
     {
+        services.AddSingleton<ISessionStore, SessionStore>();
         return services;
     }
 }

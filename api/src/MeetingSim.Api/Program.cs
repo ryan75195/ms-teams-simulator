@@ -1,3 +1,23 @@
-﻿var builder = WebApplication.CreateBuilder(args);
+﻿using MeetingSim.Api.Sessions;
+using MeetingSim.Core;
+
+const string RendererCorsPolicy = "renderer";
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddCoreServices();
+builder.Services.AddCors(options => options.AddPolicy(RendererCorsPolicy, policy => policy
+    .WithOrigins(
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "app://./")
+    .AllowAnyHeader()
+    .AllowAnyMethod()
+    .AllowCredentials()));
+
 var app = builder.Build();
+
+app.UseCors(RendererCorsPolicy);
+app.MapSessionEndpoints();
+
 app.Run();
