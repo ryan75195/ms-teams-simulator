@@ -1,4 +1,5 @@
-﻿using MeetingSim.Api.Personas;
+﻿using MeetingSim.Api.Events;
+using MeetingSim.Api.Personas;
 using MeetingSim.Api.Sessions;
 using MeetingSim.Core;
 
@@ -21,5 +22,6 @@ var app = builder.Build();
 app.UseCors(RendererCorsPolicy);
 app.MapSessionEndpoints();
 app.MapPersonaEndpoints();
+app.MapEventEndpoints();
 
 app.Run();
