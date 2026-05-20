@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MeetingSim.Analyzers/MeetingSim.Analyzers.csproj" />
+    <Project Path="src/MeetingSim.Api/MeetingSim.Api.csproj" />
+    <Project Path="src/MeetingSim.Core/MeetingSim.Core.csproj" />
+    <Project Path="src/MeetingSim.Etl/MeetingSim.Etl.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MeetingSim.Tests.Analyzers/MeetingSim.Tests.Analyzers.csproj" />
+    <Project Path="tests/MeetingSim.Tests.Architecture/MeetingSim.Tests.Architecture.csproj" />
+    <Project Path="tests/MeetingSim.Tests.Integration/MeetingSim.Tests.Integration.csproj" />
+    <Project Path="tests/MeetingSim.Tests.Unit/MeetingSim.Tests.Unit.csproj" />
+  </Folder>
+</Solution>
