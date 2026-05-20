@@ -15,8 +15,7 @@ npm-debug.log*
 .idea/
 Thumbs.db
 
-# Playwright / scratch screenshots
+# Playwright / scratch screenshots — everything except the reference image
 .playwright-mcp/
-teams-current.png
-teams-fullpage.png
-teams-v2-*.png
+teams-*.png
+!teams-reference.png

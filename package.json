@@ -3,18 +3,59 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "electron/main.cjs",
+  "description": "Microsoft Teams group meeting simulator (Electron + React + Fluent UI).",
+  "author": "ryan75195",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview",
+    "electron": "electron .",
+    "electron:dev": "concurrently -k -n vite,electron -c blue,magenta \"npm:dev\" \"npm:electron:wait\"",
+    "electron:wait": "wait-on tcp:127.0.0.1:5173 && electron .",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:dir": "npm run build && electron-builder --dir"
   },
   "dependencies": {
     "@fluentui/react-components": "9.73.8",
     "@fluentui/react-icons": "2.0.326",
-    "@vitejs/plugin-react": "6.0.2",
-    "vite": "8.0.13",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.0.2",
+    "concurrently": "9.1.0",
+    "electron": "33.2.0",
+    "electron-builder": "25.1.8",
+    "vite": "8.0.13",
+    "wait-on": "8.0.1"
+  },
+  "build": {
+    "appId": "com.ryan75195.msteamssim",
+    "productName": "Teams Call Simulator",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Office"
+    }
+  }
 }
