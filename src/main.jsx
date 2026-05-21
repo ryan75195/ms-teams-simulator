@@ -25,13 +25,15 @@ import { useSession } from "./useSession";
 import { ChatPane } from "./components/ChatPane";
 import { ContentStage } from "./components/ContentStage";
 import { Gallery } from "./components/Gallery";
+import { LiveMicControl } from "./components/LiveMicControl";
 import { PeoplePane } from "./components/PeoplePane";
-import { RecorderControl } from "./components/RecorderControl";
 import { Ribbon } from "./components/Ribbon";
 import { SimPanel } from "./components/SimPanel";
 import "./styles.css";
 
 const API_URL = import.meta.env.VITE_API_URL || null;
+const WS_BASE_URL = API_URL ? API_URL.replace(/^http/, "ws") : null;
+const PARTIAL_TRANSCRIPT_LINGER_MS = 1500;
 const YOU_PERSONA_ID = "you";
 
 function buildSeedChat() {
@@ -72,6 +74,8 @@ function App() {
 
   const chatIdRef = useRef(100);
   const reactionIdRef = useRef(0);
+  const partialClearTimerRef = useRef(null);
+  const [partialTranscript, setPartialTranscript] = useState("");
 
   useEffect(() => {
     if (apiMode) return;
@@ -314,19 +318,30 @@ function App() {
     setRightPane((rp) => (rp === target ? null : target));
   }
 
-  async function handleRecordedAudio(blob) {
-    if (!apiMode || !api.sessionId) return;
-    const form = new FormData();
-    const filename = `recording-${Date.now()}.webm`;
-    form.append("file", blob, filename);
-    const response = await fetch(
-      `${API_URL}/sessions/${api.sessionId}/transcribe`,
-      { method: "POST", body: form }
-    );
-    if (!response.ok) {
-      throw new Error(`Transcribe POST failed: ${response.status}`);
+  function handlePartialTranscript(text) {
+    setPartialTranscript(text);
+    if (partialClearTimerRef.current) {
+      window.clearTimeout(partialClearTimerRef.current);
     }
+    partialClearTimerRef.current = window.setTimeout(
+      () => setPartialTranscript(""),
+      PARTIAL_TRANSCRIPT_LINGER_MS
+    );
   }
+
+  useEffect(
+    () => () => {
+      if (partialClearTimerRef.current) {
+        window.clearTimeout(partialClearTimerRef.current);
+      }
+    },
+    []
+  );
+
+  const realtimeWsUrl =
+    apiMode && api.sessionId && WS_BASE_URL
+      ? `${WS_BASE_URL}/sessions/${api.sessionId}/realtime`
+      : null;
 
   const apiParticipants = useMemo(() => {
     if (!apiMode || !api.personas) return null;
@@ -435,10 +450,17 @@ function App() {
           )}
         </div>
 
-        <RecorderControl
-          enabled={apiMode && api.connected}
-          onRecorded={handleRecordedAudio}
+        <LiveMicControl
+          enabled={apiMode && api.connected && !!realtimeWsUrl}
+          wsUrl={realtimeWsUrl}
+          onPartial={handlePartialTranscript}
         />
+
+        {partialTranscript && (
+          <div className="partial-transcript" aria-live="polite">
+            {partialTranscript}
+          </div>
+        )}
 
         <button
           className={`sim-toggle${debugOpen ? " is-open" : ""}`}

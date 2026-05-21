@@ -77,6 +77,21 @@ function createWindow() {
 
   win.once("ready-to-show", () => win.show());
 
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+    const key = (input.key || "").toLowerCase();
+    if ((input.control || input.meta) && key === "r") {
+      event.preventDefault();
+      win.webContents.reload();
+    } else if (key === "f5") {
+      event.preventDefault();
+      win.webContents.reload();
+    } else if (key === "f12" || (input.control && input.shift && key === "i")) {
+      event.preventDefault();
+      win.webContents.toggleDevTools();
+    }
+  });
+
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };
@@ -124,14 +139,16 @@ ipcMain.handle("window:is-maximized", (e) =>
 Menu.setApplicationMenu(null);
 
 app.whenReady().then(() => {
+  const grantedPermissions = new Set(["media", "audioCapture", "mediaKeySystem"]);
+
   session.defaultSession.setPermissionRequestHandler(
     (_webContents, permission, callback) => {
-      if (permission === "media" || permission === "audioCapture") {
-        callback(true);
-        return;
-      }
-      callback(false);
+      callback(grantedPermissions.has(permission));
     }
+  );
+
+  session.defaultSession.setPermissionCheckHandler(
+    (_webContents, permission) => grantedPermissions.has(permission)
   );
 
   createWindow();

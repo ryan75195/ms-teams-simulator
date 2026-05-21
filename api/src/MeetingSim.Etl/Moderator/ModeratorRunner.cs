@@ -12,6 +12,9 @@ internal static class ModeratorRunner
     private const int RecentSpeakersWindow = 2;
     private const int RecentChunksWindow = 6;
     private const string TranscriptKind = "transcript";
+    private const string SpeakKind = "speak";
+    private const string HandRaiseKind = "hand-raise";
+    private static readonly TimeSpan ActiveResponderTtl = TimeSpan.FromSeconds(20);
 
     public static async Task<int> Run(string[] args)
     {
@@ -44,13 +47,12 @@ internal static class ModeratorRunner
         ModeratorService moderator,
         ApiEventClient poster)
     {
-        var transcriptBuffer = new List<string>();
-        var recentSpeakers = new Queue<string>();
+        var state = new ModeratorState();
         var hubUrl = new Uri(parsed.ApiUri, "/hubs/session");
 
         await using var connection = BuildConnection(hubUrl);
         connection.On<JsonElement>("event", async evt =>
-            await SafeHandleEvent(evt, transcriptBuffer, recentSpeakers, moderator, poster).ConfigureAwait(false));
+            await SafeHandleEvent(evt, state, moderator, poster).ConfigureAwait(false));
 
         Console.WriteLine($"Moderator model: {parsed.ModelName}");
         Console.WriteLine($"Connecting to {hubUrl} for session {parsed.SessionId}…");
@@ -124,14 +126,13 @@ internal static class ModeratorRunner
 
     private static async Task SafeHandleEvent(
         JsonElement evt,
-        List<string> transcriptBuffer,
-        Queue<string> recentSpeakers,
+        ModeratorState state,
         ModeratorService moderator,
         ApiEventClient poster)
     {
         try
         {
-            await HandleEvent(evt, transcriptBuffer, recentSpeakers, moderator, poster).ConfigureAwait(false);
+            await HandleEvent(evt, state, moderator, poster).ConfigureAwait(false);
         }
         catch (HttpRequestException ex)
         {
@@ -145,24 +146,46 @@ internal static class ModeratorRunner
 
     private static async Task HandleEvent(
         JsonElement evt,
-        List<string> transcriptBuffer,
-        Queue<string> recentSpeakers,
+        ModeratorState state,
         ModeratorService moderator,
         ApiEventClient poster)
     {
-        if (!IsTranscript(evt, out var text))
+        var kind = ReadKind(evt);
+        if (kind == TranscriptKind)
+        {
+            await HandleTranscript(evt, state, moderator, poster).ConfigureAwait(false);
+        }
+        else if (kind == SpeakKind)
+        {
+            HandleSpeakBroadcast(evt, state);
+        }
+        else if (kind == HandRaiseKind)
+        {
+            HandleHandRaise(evt, state);
+        }
+    }
+
+    private static async Task HandleTranscript(
+        JsonElement evt,
+        ModeratorState state,
+        ModeratorService moderator,
+        ApiEventClient poster)
+    {
+        if (!TryReadTranscriptText(evt, out var text))
         {
             return;
         }
 
-        var seen = transcriptBuffer.ToList();
-        AppendToBuffer(transcriptBuffer, text);
+        state.ExpireActiveResponder(DateTimeOffset.UtcNow);
+        var seen = state.TranscriptBuffer.ToList();
+        AppendToBuffer(state.TranscriptBuffer, text);
 
         Console.WriteLine();
         Console.WriteLine($"[transcript] {text}");
+        Console.WriteLine($"  context : active={state.ActiveResponderId ?? "-"} hands={(state.HandsUp.Count == 0 ? "-" : string.Join(",", state.HandsUp))} recent={(state.RecentSpeakers.Count == 0 ? "-" : string.Join(",", state.RecentSpeakers))}");
 
         var decision = await moderator
-            .DecideAsync(text, seen, recentSpeakers.ToList())
+            .DecideAsync(text, seen, state.RecentSpeakers.ToList(), state.ActiveResponderId, state.HandsUp)
             .ConfigureAwait(false);
         PrintDecision(decision);
 
@@ -172,16 +195,63 @@ internal static class ModeratorRunner
         }
 
         await poster.Post(decision).ConfigureAwait(false);
-        AdvanceSpeakers(decision, recentSpeakers);
+        AdvanceSpeakers(decision, state.RecentSpeakers);
+        await LowerHandIfRaised(decision, state, poster).ConfigureAwait(false);
     }
 
-    private static bool IsTranscript(JsonElement evt, out string text)
+    private static async Task LowerHandIfRaised(
+        ModeratorDecision decision,
+        ModeratorState state,
+        ApiEventClient poster)
+    {
+        if (!string.Equals(decision.Action, "speak", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+        if (decision.PersonaId is not { Length: > 0 } pid)
+        {
+            return;
+        }
+        if (!state.HandsUp.Contains(pid))
+        {
+            return;
+        }
+        await poster.PostHandLowered(pid).ConfigureAwait(false);
+    }
+
+    private static void HandleSpeakBroadcast(JsonElement evt, ModeratorState state)
+    {
+        if (!TryReadPersonaId(evt, out var personaId))
+        {
+            return;
+        }
+        state.ActiveResponderId = personaId;
+        state.ActiveResponderExpiresAt = DateTimeOffset.UtcNow + ActiveResponderTtl;
+    }
+
+    private static void HandleHandRaise(JsonElement evt, ModeratorState state)
+    {
+        if (!TryReadPersonaId(evt, out var personaId))
+        {
+            return;
+        }
+        var raised = evt.TryGetProperty("raised", out var raisedEl) && raisedEl.GetBoolean();
+        if (raised)
+        {
+            state.HandsUp.Add(personaId);
+        }
+        else
+        {
+            state.HandsUp.Remove(personaId);
+        }
+    }
+
+    private static string? ReadKind(JsonElement evt)
+        => evt.TryGetProperty("kind", out var kindEl) ? kindEl.GetString() : null;
+
+    private static bool TryReadTranscriptText(JsonElement evt, out string text)
     {
         text = string.Empty;
-        if (!evt.TryGetProperty("kind", out var kindEl) || kindEl.GetString() != TranscriptKind)
-        {
-            return false;
-        }
         if (!evt.TryGetProperty("text", out var textEl))
         {
             return false;
@@ -192,6 +262,22 @@ internal static class ModeratorRunner
             return false;
         }
         text = payload;
+        return true;
+    }
+
+    private static bool TryReadPersonaId(JsonElement evt, out string personaId)
+    {
+        personaId = string.Empty;
+        if (!evt.TryGetProperty("personaId", out var idEl))
+        {
+            return false;
+        }
+        var value = idEl.GetString();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+        personaId = value;
         return true;
     }
 
@@ -228,4 +314,26 @@ internal static class ModeratorRunner
     }
 
     private sealed record ParsedArgs(string ApiKey, Uri ApiUri, Guid SessionId, string ModelName);
+
+    private sealed class ModeratorState
+    {
+        public List<string> TranscriptBuffer { get; } = [];
+
+        public Queue<string> RecentSpeakers { get; } = new();
+
+        public HashSet<string> HandsUp { get; } = new(StringComparer.Ordinal);
+
+        public string? ActiveResponderId { get; set; }
+
+        public DateTimeOffset? ActiveResponderExpiresAt { get; set; }
+
+        public void ExpireActiveResponder(DateTimeOffset now)
+        {
+            if (ActiveResponderExpiresAt is { } expires && expires <= now)
+            {
+                ActiveResponderId = null;
+                ActiveResponderExpiresAt = null;
+            }
+        }
+    }
 }

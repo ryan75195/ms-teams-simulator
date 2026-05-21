@@ -1,0 +1,134 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import workletUrl from "./pcmWorklet.js?url";
+
+const TARGET_SAMPLE_RATE = 24000;
+
+export function useLiveMic({ wsUrl, onPartial, onError }) {
+  const [state, setState] = useState("idle");
+  const runningRef = useRef(false);
+  const ctxRef = useRef(null);
+  const wsRef = useRef(null);
+  const streamRef = useRef(null);
+  const nodeRef = useRef(null);
+  const sourceRef = useRef(null);
+
+  const stop = useCallback(() => {
+    if (!runningRef.current) return;
+    runningRef.current = false;
+
+    sourceRef.current?.disconnect();
+    sourceRef.current = null;
+
+    nodeRef.current?.port?.close();
+    nodeRef.current?.disconnect();
+    nodeRef.current = null;
+
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+
+    if (ctxRef.current && ctxRef.current.state !== "closed") {
+      ctxRef.current.close().catch(() => {});
+    }
+    ctxRef.current = null;
+
+    if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) {
+      try {
+        wsRef.current.close(1000, "user_stop");
+      } catch {
+        // ignored
+      }
+    }
+    wsRef.current = null;
+
+    setState("idle");
+  }, []);
+
+  const start = useCallback(async () => {
+    if (runningRef.current) return;
+    if (!wsUrl) {
+      onError?.("No session WebSocket URL.");
+      return;
+    }
+    runningRef.current = true;
+    setState("starting");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      if (!runningRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      streamRef.current = stream;
+
+      const ctx = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
+      ctxRef.current = ctx;
+      await ctx.audioWorklet.addModule(workletUrl);
+
+      const ws = new WebSocket(wsUrl);
+      ws.binaryType = "arraybuffer";
+      wsRef.current = ws;
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === "transcript.partial") onPartial?.(msg.text);
+        } catch {
+          // ignored
+        }
+      };
+      ws.onerror = () => {
+        if (runningRef.current) {
+          onError?.("WebSocket error.");
+          stop();
+        }
+      };
+      ws.onclose = () => {
+        if (runningRef.current) stop();
+      };
+
+      await new Promise((resolve, reject) => {
+        ws.addEventListener("open", () => resolve(), { once: true });
+        ws.addEventListener(
+          "error",
+          () => reject(new Error("WebSocket failed to open")),
+          { once: true }
+        );
+      });
+
+      if (!runningRef.current) return;
+
+      const source = ctx.createMediaStreamSource(stream);
+      const node = new AudioWorkletNode(ctx, "pcm-downsampler");
+      sourceRef.current = source;
+      nodeRef.current = node;
+
+      node.port.onmessage = (e) => {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(e.data);
+        }
+      };
+      source.connect(node);
+
+      setState("live");
+    } catch (e) {
+      onError?.(e?.message ?? String(e));
+      stop();
+    }
+  }, [wsUrl, onPartial, onError, stop]);
+
+  useEffect(
+    () => () => {
+      runningRef.current = false;
+      stop();
+    },
+    [stop]
+  );
+
+  return { state, start, stop };
+}

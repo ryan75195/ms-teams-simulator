@@ -29,11 +29,19 @@ internal sealed class ModeratorService
         string currentChunk,
         IReadOnlyList<string> recentChunks,
         IReadOnlyList<string> recentSpeakers,
+        string? activeResponderId = null,
+        IReadOnlyCollection<string>? handsUp = null,
         CancellationToken cancellationToken = default)
     {
         var calledOut = CalloutDetector.Detect(currentChunk, _roster);
         var systemPrompt = PromptBuilder.BuildSystemPrompt(_roster);
-        var userPrompt = PromptBuilder.BuildUserPrompt(currentChunk, recentChunks, recentSpeakers, calledOut);
+        var userPrompt = PromptBuilder.BuildUserPrompt(
+            currentChunk,
+            recentChunks,
+            recentSpeakers,
+            calledOut,
+            activeResponderId,
+            handsUp);
 
         var messages = new ChatMessage[]
         {
