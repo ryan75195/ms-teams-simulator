@@ -1259,6 +1259,76 @@ html.is-electron .teams-app {
   height: 14px;
 }
 
+/* ─── Floating record toggle ──────────────────────── */
+.rec-toggle {
+  position: absolute;
+  right: 120px;
+  bottom: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 8px 12px;
+  background: rgba(31, 31, 31, 0.94);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  z-index: 50;
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.5),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  transition: transform 0.18s ease, background-color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.rec-toggle:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(255, 138, 147, 0.55);
+}
+
+.rec-toggle:disabled {
+  cursor: progress;
+  opacity: 0.85;
+}
+
+.rec-toggle.is-recording {
+  background: var(--danger);
+  border-color: var(--danger-strong);
+}
+
+.rec-toggle.is-uploading {
+  background: var(--brand-strong);
+  border-color: var(--brand);
+}
+
+.rec-toggle-dot {
+  width: 8px;
+  height: 8px;
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.0);
+}
+
+.rec-toggle.is-recording .rec-toggle-dot {
+  animation: recTogglePulse 1.2s ease-in-out infinite;
+}
+
+@keyframes recTogglePulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(255, 255, 255, 0);
+  }
+}
+
 .sim-panel {
   position: absolute;
   right: 18px;
