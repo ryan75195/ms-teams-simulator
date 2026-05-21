@@ -1,0 +1,155 @@
+﻿using System.ClientModel;
+using MeetingSim.Core.Personas;
+using OpenAI.Chat;
+
+namespace MeetingSim.Etl.Moderator.Orchestrator;
+
+internal sealed class ModeratorOrchestrator
+{
+    private readonly ChatClient _client;
+    private readonly ModeratorToolRegistry _registry;
+    private readonly string _systemPrompt;
+
+    public ModeratorOrchestrator(
+        ChatClient client,
+        ModeratorToolRegistry registry,
+        IReadOnlyList<Persona> roster)
+    {
+        _client = client;
+        _registry = registry;
+        _systemPrompt = BuildSystemPrompt(roster);
+    }
+
+    public async Task Decide(ModeratorContext context, CancellationToken cancellationToken = default)
+    {
+        var messages = new ChatMessage[]
+        {
+            new SystemChatMessage(_systemPrompt),
+            new UserChatMessage(BuildUserPrompt(context)),
+        };
+
+        var options = new ChatCompletionOptions
+        {
+            ToolChoice = ChatToolChoice.CreateRequiredChoice(),
+            AllowParallelToolCalls = true,
+        };
+        foreach (var definition in _registry.Definitions)
+        {
+            options.Tools.Add(definition);
+        }
+
+        ClientResult<ChatCompletion> result = await _client
+            .CompleteChatAsync(messages, options, cancellationToken)
+            .ConfigureAwait(false);
+
+        await LogDecision(result.Value).ConfigureAwait(false);
+
+        foreach (var call in result.Value.ToolCalls)
+        {
+            await _registry.Dispatch(call, context, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    internal static string BuildSystemPrompt(IReadOnlyList<Persona> roster)
+    {
+        var personas = string.Join(
+            "\n",
+            roster
+                .Where(p => p.Archetype != Archetype.User)
+                .Select(p => $"- {p.Name} (id: {p.Id}) — {DescribeArchetype(p.Archetype)}"));
+
+        return $"""
+            You are the audience director for a presentation simulator. The presenter just said something; decide how the audience reacts by calling one tool per persona who reacts.
+
+            Personas in the audience (only these may react):
+            {personas}
+
+            Each tool's description tells you when to use it. Two principles override everything else:
+
+            1. Speaking out loud interrupts the presenter — reserve `cast_speak` for direct name callouts and active-dialogue continuations only. If a persona wants to engage, they raise their hand and wait.
+            2. The active responder (if set) owns the dialogue. Every follow-up from the presenter — pleasantries, answers, clarifying questions — keeps going to them until the presenter names someone else or pivots to a brand-new topic.
+
+            You MUST call at least one tool. If no audience reaction is warranted, call `stay_quiet`. You MAY call multiple tools in parallel — for example, one persona raising their hand while another reacts with an emoji.
+            """;
+    }
+
+    internal static string BuildUserPrompt(ModeratorContext context)
+    {
+        var sections = new List<string>();
+
+        AppendContext(sections, context.RecentChunks);
+        AppendState(sections, context);
+
+        sections.Add($"""
+            Presenter just said:
+            > {context.PresenterLine}
+
+            Decide which tools to call.
+            """);
+
+        return string.Join("\n\n", sections);
+    }
+
+    private static void AppendContext(List<string> sections, IReadOnlyList<string> recentChunks)
+    {
+        if (recentChunks.Count == 0)
+        {
+            return;
+        }
+        var tail = recentChunks.Count > 6
+            ? recentChunks.Skip(recentChunks.Count - 6).ToList()
+            : recentChunks;
+        var lines = string.Join("\n", tail.Select(c => $"> {c}"));
+        sections.Add($"""
+            Recent transcript:
+            {lines}
+            """);
+    }
+
+    private static void AppendState(List<string> sections, ModeratorContext context)
+    {
+        var lines = new List<string>();
+        if (!string.IsNullOrEmpty(context.CalledOutPersonaId))
+        {
+            lines.Add($"DIRECT CALLOUT: the presenter named '{context.CalledOutPersonaId}' by their first name — cast_speak for them is mandatory this turn.");
+        }
+        if (!string.IsNullOrEmpty(context.ActiveResponderId))
+        {
+            lines.Add($"Active responder (in dialogue with presenter): {context.ActiveResponderId}");
+        }
+        if (context.HandsUp.Count > 0)
+        {
+            lines.Add($"Hands up (waiting to be called on by name): {string.Join(", ", context.HandsUp)}");
+        }
+        if (context.RecentSpeakers.Count > 0)
+        {
+            lines.Add($"Recently spoke (prefer variety unless they're the active responder): {string.Join(", ", context.RecentSpeakers)}");
+        }
+        if (lines.Count == 0)
+        {
+            return;
+        }
+        sections.Add(string.Join("\n", lines));
+    }
+
+    private static async Task LogDecision(ChatCompletion completion)
+    {
+        if (completion.Content.Count > 0 && !string.IsNullOrWhiteSpace(completion.Content[0].Text))
+        {
+            await Console.Out.WriteLineAsync($"  reasoning: {completion.Content[0].Text}").ConfigureAwait(false);
+        }
+        foreach (var call in completion.ToolCalls)
+        {
+            await Console.Out.WriteLineAsync($"  tool     : {call.FunctionName} {call.FunctionArguments}").ConfigureAwait(false);
+        }
+    }
+
+    private static string DescribeArchetype(Archetype archetype) => archetype switch
+    {
+        Archetype.Skeptic => "skeptic. Probes numbers and assumptions.",
+        Archetype.Curious => "curious. Asks clarifying questions.",
+        Archetype.Cheerleader => "cheerleader. Amplifies wins.",
+        Archetype.Silent => "silent. Mostly listens.",
+        _ => "audience member.",
+    };
+}

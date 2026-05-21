@@ -1,9 +1,10 @@
 ﻿using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using MeetingSim.Etl.Moderator.Interfaces;
 
 namespace MeetingSim.Etl.Moderator;
 
-internal sealed class ApiEventClient
+internal sealed class ApiEventClient : IEventPoster
 {
     private readonly HttpClient _http;
     private readonly Guid _sessionId;
@@ -14,37 +15,11 @@ internal sealed class ApiEventClient
         _sessionId = sessionId;
     }
 
-    public async Task Post(ModeratorDecision decision, CancellationToken cancellationToken = default)
+    public async Task PostEvent(JsonObject body, CancellationToken cancellationToken = default)
     {
-        var body = EventPostBodyFactory.FromDecision(decision);
-        if (body is null)
-        {
-            await Console.Error.WriteLineAsync(
-                $"[skipped] decision '{decision.Action}' had no postable body — likely missing personaId or text.")
-                .ConfigureAwait(false);
-            return;
-        }
-
         var response = await _http
             .PostAsJsonAsync<JsonObject>($"/sessions/{_sessionId}/events", body, cancellationToken)
             .ConfigureAwait(false);
-
-        response.EnsureSuccessStatusCode();
-    }
-
-    public async Task PostHandLowered(string personaId, CancellationToken cancellationToken = default)
-    {
-        var body = new JsonObject
-        {
-            ["kind"] = "hand-raise",
-            ["personaId"] = personaId,
-            ["raised"] = false,
-        };
-
-        var response = await _http
-            .PostAsJsonAsync<JsonObject>($"/sessions/{_sessionId}/events", body, cancellationToken)
-            .ConfigureAwait(false);
-
         response.EnsureSuccessStatusCode();
     }
 }

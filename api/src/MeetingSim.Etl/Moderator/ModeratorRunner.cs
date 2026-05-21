@@ -1,5 +1,12 @@
 ﻿using System.Net.Http.Json;
 using System.Text.Json;
+using MeetingSim.Core.Personas;
+using MeetingSim.Etl.Moderator.Interfaces;
+using MeetingSim.Etl.Moderator.Orchestrator;
+using MeetingSim.Etl.Moderator.Orchestrator.Interfaces;
+using MeetingSim.Etl.Moderator.Orchestrator.Tools;
+using MeetingSim.Etl.Voice;
+using MeetingSim.Etl.Voice.Interfaces;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
 using OpenAI.Chat;
@@ -11,6 +18,7 @@ internal static class ModeratorRunner
     private const string DefaultModelName = "gpt-4o-mini";
     private const int RecentSpeakersWindow = 2;
     private const int RecentChunksWindow = 6;
+    private const int PreviousLinesPerPersona = 3;
     private const string TranscriptKind = "transcript";
     private const string SpeakKind = "speak";
     private const string HandRaiseKind = "hand-raise";
@@ -33,26 +41,43 @@ internal static class ModeratorRunner
             return 1;
         }
 
-        var moderator = new ModeratorService(
-            new ChatClient(model: parsed.ModelName, apiKey: parsed.ApiKey),
-            personas.Roster);
-        var poster = new ApiEventClient(http, parsed.SessionId);
+        var chat = new ChatClient(model: parsed.ModelName, apiKey: parsed.ApiKey);
+        IEventPoster poster = new ApiEventClient(http, parsed.SessionId);
+        IPersonaVoiceService voice = new OpenAIPersonaVoiceService(chat, personas.Roster);
 
-        return await RunConnection(parsed, personas, moderator, poster).ConfigureAwait(false);
+        var registry = BuildRegistry(personas.Roster, poster, voice);
+        var orchestrator = new ModeratorOrchestrator(chat, registry, personas.Roster);
+
+        return await RunConnection(parsed, personas, orchestrator).ConfigureAwait(false);
+    }
+
+    private static ModeratorToolRegistry BuildRegistry(
+        IReadOnlyList<Persona> roster,
+        IEventPoster poster,
+        IPersonaVoiceService voice)
+    {
+        var tools = new IModeratorTool[]
+        {
+            new StayQuietTool(),
+            new RaiseHandTool(roster, poster),
+            new ReactTool(roster, poster),
+            new SendChatTool(roster, poster, voice),
+            new CastSpeakTool(roster, poster, voice),
+        };
+        return new ModeratorToolRegistry(tools);
     }
 
     private static async Task<int> RunConnection(
         ParsedArgs parsed,
         PersonasPayload personas,
-        ModeratorService moderator,
-        ApiEventClient poster)
+        ModeratorOrchestrator orchestrator)
     {
         var state = new ModeratorState();
         var hubUrl = new Uri(parsed.ApiUri, "/hubs/session");
 
         await using var connection = BuildConnection(hubUrl);
         connection.On<JsonElement>("event", async evt =>
-            await SafeHandleEvent(evt, state, moderator, poster).ConfigureAwait(false));
+            await SafeHandleEvent(evt, state, orchestrator, personas.Roster).ConfigureAwait(false));
 
         Console.WriteLine($"Moderator model: {parsed.ModelName}");
         Console.WriteLine($"Connecting to {hubUrl} for session {parsed.SessionId}…");
@@ -127,12 +152,12 @@ internal static class ModeratorRunner
     private static async Task SafeHandleEvent(
         JsonElement evt,
         ModeratorState state,
-        ModeratorService moderator,
-        ApiEventClient poster)
+        ModeratorOrchestrator orchestrator,
+        IReadOnlyList<Persona> roster)
     {
         try
         {
-            await HandleEvent(evt, state, moderator, poster).ConfigureAwait(false);
+            await HandleEvent(evt, state, orchestrator, roster).ConfigureAwait(false);
         }
         catch (HttpRequestException ex)
         {
@@ -147,13 +172,13 @@ internal static class ModeratorRunner
     private static async Task HandleEvent(
         JsonElement evt,
         ModeratorState state,
-        ModeratorService moderator,
-        ApiEventClient poster)
+        ModeratorOrchestrator orchestrator,
+        IReadOnlyList<Persona> roster)
     {
         var kind = ReadKind(evt);
         if (kind == TranscriptKind)
         {
-            await HandleTranscript(evt, state, moderator, poster).ConfigureAwait(false);
+            await HandleTranscript(evt, state, orchestrator, roster).ConfigureAwait(false);
         }
         else if (kind == SpeakKind)
         {
@@ -168,8 +193,8 @@ internal static class ModeratorRunner
     private static async Task HandleTranscript(
         JsonElement evt,
         ModeratorState state,
-        ModeratorService moderator,
-        ApiEventClient poster)
+        ModeratorOrchestrator orchestrator,
+        IReadOnlyList<Persona> roster)
     {
         if (!TryReadTranscriptText(evt, out var text))
         {
@@ -179,44 +204,28 @@ internal static class ModeratorRunner
         state.ExpireActiveResponder(DateTimeOffset.UtcNow);
         var seen = state.TranscriptBuffer.ToList();
         AppendToBuffer(state.TranscriptBuffer, text);
+        var calledOut = CalloutDetector.Detect(text, roster);
 
         Console.WriteLine();
         Console.WriteLine($"[transcript] {text}");
-        Console.WriteLine($"  context : active={state.ActiveResponderId ?? "-"} hands={(state.HandsUp.Count == 0 ? "-" : string.Join(",", state.HandsUp))} recent={(state.RecentSpeakers.Count == 0 ? "-" : string.Join(",", state.RecentSpeakers))}");
+        Console.WriteLine(
+            $"  state    : active={state.ActiveResponderId ?? "-"} " +
+            $"hands={(state.HandsUp.Count == 0 ? "-" : string.Join(",", state.HandsUp))} " +
+            $"recent={(state.RecentSpeakers.Count == 0 ? "-" : string.Join(",", state.RecentSpeakers))} " +
+            $"callout={calledOut ?? "-"}");
 
-        var decision = await moderator
-            .DecideAsync(text, seen, state.RecentSpeakers.ToList(), state.ActiveResponderId, state.HandsUp)
-            .ConfigureAwait(false);
-        PrintDecision(decision);
+        var context = new ModeratorContext(
+            SessionId: Guid.Empty,
+            PresenterLine: text,
+            RecentChunks: seen,
+            ActiveResponderId: state.ActiveResponderId,
+            HandsUp: state.HandsUp,
+            RecentSpeakers: state.RecentSpeakers.ToList(),
+            Roster: roster,
+            PersonaPreviousLines: state.PersonaPreviousLines,
+            CalledOutPersonaId: calledOut);
 
-        if (string.Equals(decision.Action, "none", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        await poster.Post(decision).ConfigureAwait(false);
-        AdvanceSpeakers(decision, state.RecentSpeakers);
-        await LowerHandIfRaised(decision, state, poster).ConfigureAwait(false);
-    }
-
-    private static async Task LowerHandIfRaised(
-        ModeratorDecision decision,
-        ModeratorState state,
-        ApiEventClient poster)
-    {
-        if (!string.Equals(decision.Action, "speak", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-        if (decision.PersonaId is not { Length: > 0 } pid)
-        {
-            return;
-        }
-        if (!state.HandsUp.Contains(pid))
-        {
-            return;
-        }
-        await poster.PostHandLowered(pid).ConfigureAwait(false);
+        await orchestrator.Decide(context).ConfigureAwait(false);
     }
 
     private static void HandleSpeakBroadcast(JsonElement evt, ModeratorState state)
@@ -227,6 +236,11 @@ internal static class ModeratorRunner
         }
         state.ActiveResponderId = personaId;
         state.ActiveResponderExpiresAt = DateTimeOffset.UtcNow + ActiveResponderTtl;
+        state.AdvanceRecentSpeakers(personaId, RecentSpeakersWindow);
+        if (evt.TryGetProperty("text", out var textEl) && textEl.GetString() is { Length: > 0 } text)
+        {
+            state.AppendPersonaLine(personaId, text, PreviousLinesPerPersona);
+        }
     }
 
     private static void HandleHandRaise(JsonElement evt, ModeratorState state)
@@ -290,33 +304,13 @@ internal static class ModeratorRunner
         }
     }
 
-    private static void PrintDecision(ModeratorDecision decision)
-    {
-        Console.WriteLine($"  decision: {decision.Action} {decision.PersonaId ?? "-"} — {decision.Reasoning}");
-        if (!string.IsNullOrEmpty(decision.Text))
-        {
-            Console.WriteLine($"  text    : {decision.Text}");
-        }
-    }
-
-    private static void AdvanceSpeakers(ModeratorDecision decision, Queue<string> recentSpeakers)
-    {
-        if (decision.PersonaId is not { Length: > 0 } speaker)
-        {
-            return;
-        }
-
-        recentSpeakers.Enqueue(speaker);
-        while (recentSpeakers.Count > RecentSpeakersWindow)
-        {
-            recentSpeakers.Dequeue();
-        }
-    }
-
     private sealed record ParsedArgs(string ApiKey, Uri ApiUri, Guid SessionId, string ModelName);
 
     private sealed class ModeratorState
     {
+        private readonly Dictionary<string, List<string>> _personaUtterances = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, IReadOnlyList<string>> _personaUtterancesView = new(StringComparer.Ordinal);
+
         public List<string> TranscriptBuffer { get; } = [];
 
         public Queue<string> RecentSpeakers { get; } = new();
@@ -327,12 +321,38 @@ internal static class ModeratorRunner
 
         public DateTimeOffset? ActiveResponderExpiresAt { get; set; }
 
+        public IReadOnlyDictionary<string, IReadOnlyList<string>> PersonaPreviousLines => _personaUtterancesView;
+
         public void ExpireActiveResponder(DateTimeOffset now)
         {
             if (ActiveResponderExpiresAt is { } expires && expires <= now)
             {
                 ActiveResponderId = null;
                 ActiveResponderExpiresAt = null;
+            }
+        }
+
+        public void AdvanceRecentSpeakers(string personaId, int window)
+        {
+            RecentSpeakers.Enqueue(personaId);
+            while (RecentSpeakers.Count > window)
+            {
+                RecentSpeakers.Dequeue();
+            }
+        }
+
+        public void AppendPersonaLine(string personaId, string line, int maxLinesPerPersona)
+        {
+            if (!_personaUtterances.TryGetValue(personaId, out var list))
+            {
+                list = [];
+                _personaUtterances[personaId] = list;
+                _personaUtterancesView[personaId] = list;
+            }
+            list.Add(line);
+            while (list.Count > maxLinesPerPersona)
+            {
+                list.RemoveAt(0);
             }
         }
     }
