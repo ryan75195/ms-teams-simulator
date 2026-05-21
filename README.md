@@ -17,9 +17,15 @@ mocks, or training tooling that needs a realistic meeting frame.
 
 ```bash
 npm install
-npm run dev              # browser at http://127.0.0.1:5173
+npm run dev              # browser at http://127.0.0.1:5173 (local-only simulator)
 npm run electron:dev     # frameless Electron window (Vite + Electron concurrently)
+
+# API-driven mode — start the .NET API first, then point the renderer at it:
+dotnet run --project api/src/MeetingSim.Api/MeetingSim.Api.csproj
+$env:VITE_API_URL = "http://localhost:63852"; npm run dev
 ```
+
+When `VITE_API_URL` is set, the renderer creates a session on first load, subscribes to the `/hubs/session` SignalR hub, and renders state from server-pushed events. Without it, the existing local simulation runs unchanged.
 
 ## Package
 
