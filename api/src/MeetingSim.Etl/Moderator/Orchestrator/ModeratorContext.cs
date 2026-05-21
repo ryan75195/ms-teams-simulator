@@ -10,4 +10,5 @@ public sealed record ModeratorContext(
     IReadOnlyCollection<string> HandsUp,
     IReadOnlyList<string> RecentSpeakers,
     IReadOnlyList<Persona> Roster,
-    IReadOnlyDictionary<string, IReadOnlyList<string>> PersonaPreviousLines);
+    IReadOnlyDictionary<string, IReadOnlyList<string>> PersonaPreviousLines,
+    string? CalledOutPersonaId = null);

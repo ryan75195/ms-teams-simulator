@@ -109,6 +109,10 @@ internal sealed class ModeratorOrchestrator
     private static void AppendState(List<string> sections, ModeratorContext context)
     {
         var lines = new List<string>();
+        if (!string.IsNullOrEmpty(context.CalledOutPersonaId))
+        {
+            lines.Add($"DIRECT CALLOUT: the presenter named '{context.CalledOutPersonaId}' by their first name — cast_speak for them is mandatory this turn.");
+        }
         if (!string.IsNullOrEmpty(context.ActiveResponderId))
         {
             lines.Add($"Active responder (in dialogue with presenter): {context.ActiveResponderId}");

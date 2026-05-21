@@ -13,7 +13,8 @@ public class ModeratorOrchestratorTests
         string? activeResponder = null,
         IReadOnlyCollection<string>? handsUp = null,
         IReadOnlyList<string>? recentSpeakers = null,
-        IReadOnlyList<string>? recentChunks = null)
+        IReadOnlyList<string>? recentChunks = null,
+        string? calledOut = null)
         => new(
             SessionId: Guid.NewGuid(),
             PresenterLine: presenterLine,
@@ -22,7 +23,8 @@ public class ModeratorOrchestratorTests
             HandsUp: handsUp ?? new HashSet<string>(),
             RecentSpeakers: recentSpeakers ?? [],
             Roster: Roster(),
-            PersonaPreviousLines: new Dictionary<string, IReadOnlyList<string>>());
+            PersonaPreviousLines: new Dictionary<string, IReadOnlyList<string>>(),
+            CalledOutPersonaId: calledOut);
 
     [Test]
     public void Should_list_every_non_user_persona_in_the_system_prompt()
@@ -127,6 +129,28 @@ public class ModeratorOrchestratorTests
             Assert.That(prompt, Does.Contain("Welcome."));
             Assert.That(prompt, Does.Contain("Pipeline up 18%."));
         });
+    }
+
+    [Test]
+    public void Should_emit_direct_callout_block_when_a_persona_is_named()
+    {
+        var prompt = ModeratorOrchestrator.BuildUserPrompt(
+            Context(presenterLine: "Anuj, thoughts?", calledOut: "anuj"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(prompt, Does.Contain("DIRECT CALLOUT"));
+            Assert.That(prompt, Does.Contain("'anuj'"));
+            Assert.That(prompt, Does.Contain("cast_speak"));
+        });
+    }
+
+    [Test]
+    public void Should_omit_direct_callout_block_when_no_persona_is_named()
+    {
+        var prompt = ModeratorOrchestrator.BuildUserPrompt(Context(calledOut: null));
+
+        Assert.That(prompt, Does.Not.Contain("DIRECT CALLOUT"));
     }
 
     [Test]
