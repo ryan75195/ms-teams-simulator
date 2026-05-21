@@ -12,6 +12,7 @@ import {
   PeopleTeamRegular,
   ShareScreenStartRegular,
   ShareScreenStopRegular,
+  TextBulletListSquareRegular,
 } from "@fluentui/react-icons";
 import { formatElapsed } from "../helpers";
 
@@ -185,6 +186,12 @@ export function Ribbon({
           icon={<ChatRegular />}
           active={rightPane === "chat"}
           onClick={() => togglePane("chat")}
+        />
+        <IconButton
+          label="Transcript"
+          icon={<TextBulletListSquareRegular />}
+          active={rightPane === "transcript"}
+          onClick={() => togglePane("transcript")}
         />
         <IconButton label="React" icon={<EmojiRegular />} onClick={onReact} />
         <IconButton
