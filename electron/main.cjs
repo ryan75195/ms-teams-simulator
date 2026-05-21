@@ -3,6 +3,7 @@ const {
   BrowserWindow,
   Menu,
   ipcMain,
+  session,
   shell,
 } = require("electron");
 const fs = require("node:fs");
@@ -123,6 +124,16 @@ ipcMain.handle("window:is-maximized", (e) =>
 Menu.setApplicationMenu(null);
 
 app.whenReady().then(() => {
+  session.defaultSession.setPermissionRequestHandler(
+    (_webContents, permission, callback) => {
+      if (permission === "media" || permission === "audioCapture") {
+        callback(true);
+        return;
+      }
+      callback(false);
+    }
+  );
+
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

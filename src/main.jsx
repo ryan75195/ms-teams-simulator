@@ -26,6 +26,7 @@ import { ChatPane } from "./components/ChatPane";
 import { ContentStage } from "./components/ContentStage";
 import { Gallery } from "./components/Gallery";
 import { PeoplePane } from "./components/PeoplePane";
+import { RecorderControl } from "./components/RecorderControl";
 import { Ribbon } from "./components/Ribbon";
 import { SimPanel } from "./components/SimPanel";
 import "./styles.css";
@@ -313,6 +314,20 @@ function App() {
     setRightPane((rp) => (rp === target ? null : target));
   }
 
+  async function handleRecordedAudio(blob) {
+    if (!apiMode || !api.sessionId) return;
+    const form = new FormData();
+    const filename = `recording-${Date.now()}.webm`;
+    form.append("file", blob, filename);
+    const response = await fetch(
+      `${API_URL}/sessions/${api.sessionId}/transcribe`,
+      { method: "POST", body: form }
+    );
+    if (!response.ok) {
+      throw new Error(`Transcribe POST failed: ${response.status}`);
+    }
+  }
+
   const apiParticipants = useMemo(() => {
     if (!apiMode || !api.personas) return null;
     return api.personas.roster.map((p) => ({
@@ -419,6 +434,11 @@ function App() {
             />
           )}
         </div>
+
+        <RecorderControl
+          enabled={apiMode && api.connected}
+          onRecorded={handleRecordedAudio}
+        />
 
         <button
           className={`sim-toggle${debugOpen ? " is-open" : ""}`}
