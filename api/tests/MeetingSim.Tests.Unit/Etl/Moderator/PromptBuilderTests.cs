@@ -113,4 +113,33 @@ public class PromptBuilderTests
         Assert.That(prompt, Does.Not.Contain("Recently spoke:"));
         Assert.That(prompt, Does.Not.Contain("Pick someone else"));
     }
+
+    [Test]
+    public void Should_emit_direct_callout_block_when_persona_is_named()
+    {
+        var prompt = PromptBuilder.BuildUserPrompt(
+            "Anuj, what do you think?",
+            NoRecentChunks,
+            NoRecentSpeakers,
+            calledOutPersonaId: "anuj");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(prompt, Does.Contain("DIRECT CALLOUT"));
+            Assert.That(prompt, Does.Contain("'anuj'"));
+            Assert.That(prompt, Does.Contain("MUST respond with action='speak'"));
+        });
+    }
+
+    [Test]
+    public void Should_skip_direct_callout_block_when_no_persona_named()
+    {
+        var prompt = PromptBuilder.BuildUserPrompt(
+            "Pipeline is up.",
+            NoRecentChunks,
+            NoRecentSpeakers,
+            calledOutPersonaId: null);
+
+        Assert.That(prompt, Does.Not.Contain("DIRECT CALLOUT"));
+    }
 }

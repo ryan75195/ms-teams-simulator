@@ -31,8 +31,9 @@ internal sealed class ModeratorService
         IReadOnlyList<string> recentSpeakers,
         CancellationToken cancellationToken = default)
     {
+        var calledOut = CalloutDetector.Detect(currentChunk, _roster);
         var systemPrompt = PromptBuilder.BuildSystemPrompt(_roster);
-        var userPrompt = PromptBuilder.BuildUserPrompt(currentChunk, recentChunks, recentSpeakers);
+        var userPrompt = PromptBuilder.BuildUserPrompt(currentChunk, recentChunks, recentSpeakers, calledOut);
 
         var messages = new ChatMessage[]
         {

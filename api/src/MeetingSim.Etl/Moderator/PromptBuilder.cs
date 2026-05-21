@@ -51,7 +51,8 @@ internal static class PromptBuilder
     public static string BuildUserPrompt(
         string currentChunk,
         IReadOnlyList<string> recentChunks,
-        IReadOnlyList<string> recentSpeakers)
+        IReadOnlyList<string> recentSpeakers,
+        string? calledOutPersonaId = null)
     {
         var sb = new StringBuilder();
         IReadOnlyList<string> context = recentChunks.Count > MaxContextChunks
@@ -75,6 +76,15 @@ internal static class PromptBuilder
             sb.Append(string.Join(", ", recentSpeakers));
             sb.AppendLine(".");
             sb.AppendLine("Pick someone else unless the presenter directly addresses one of them by name.");
+            sb.AppendLine();
+        }
+
+        if (!string.IsNullOrEmpty(calledOutPersonaId))
+        {
+            sb.Append("DIRECT CALLOUT: the presenter just named persona id '");
+            sb.Append(calledOutPersonaId);
+            sb.AppendLine("' by their first name.");
+            sb.AppendLine("This persona MUST respond with action='speak'. The recently-spoke suppression does NOT apply when directly addressed.");
             sb.AppendLine();
         }
 
