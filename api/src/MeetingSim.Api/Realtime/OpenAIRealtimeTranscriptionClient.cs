@@ -21,11 +21,12 @@ internal sealed class OpenAIRealtimeTranscriptionClient : IRealtimeTranscription
                 "OPENAI_API_KEY is not configured. Set the env var or OpenAI:ApiKey configuration.");
     }
 
+    public const int AudioSampleRateHz = 24_000;
+
     public async Task<IRealtimeTranscriptionSession> Open(CancellationToken cancellationToken)
     {
         var socket = new ClientWebSocket();
         socket.Options.SetRequestHeader("Authorization", $"Bearer {_apiKey}");
-        socket.Options.SetRequestHeader("OpenAI-Beta", "realtime=v1");
         var disposeOnFailure = socket;
         try
         {
@@ -45,20 +46,31 @@ internal sealed class OpenAIRealtimeTranscriptionClient : IRealtimeTranscription
     {
         var payload = new JsonObject
         {
-            ["type"] = "transcription_session.update",
+            ["type"] = "session.update",
             ["session"] = new JsonObject
             {
-                ["input_audio_format"] = "pcm16",
-                ["input_audio_transcription"] = new JsonObject
+                ["type"] = "transcription",
+                ["audio"] = new JsonObject
                 {
-                    ["model"] = TranscriptionModelName,
-                },
-                ["turn_detection"] = new JsonObject
-                {
-                    ["type"] = "server_vad",
-                    ["threshold"] = 0.5,
-                    ["prefix_padding_ms"] = 300,
-                    ["silence_duration_ms"] = 800,
+                    ["input"] = new JsonObject
+                    {
+                        ["format"] = new JsonObject
+                        {
+                            ["type"] = "audio/pcm",
+                            ["rate"] = AudioSampleRateHz,
+                        },
+                        ["transcription"] = new JsonObject
+                        {
+                            ["model"] = TranscriptionModelName,
+                        },
+                        ["turn_detection"] = new JsonObject
+                        {
+                            ["type"] = "server_vad",
+                            ["threshold"] = 0.5,
+                            ["prefix_padding_ms"] = 300,
+                            ["silence_duration_ms"] = 800,
+                        },
+                    },
                 },
             },
         };
