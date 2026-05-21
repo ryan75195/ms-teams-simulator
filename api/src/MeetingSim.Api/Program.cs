@@ -1,6 +1,8 @@
 ﻿using MeetingSim.Api.Events;
 using MeetingSim.Api.Personas;
 using MeetingSim.Api.Sessions;
+using MeetingSim.Api.Transcription;
+using MeetingSim.Api.Transcription.Interfaces;
 using MeetingSim.Core;
 
 const string RendererCorsPolicy = "renderer";
@@ -9,6 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddCoreServices();
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<ITranscriptionService, OpenAITranscriptionService>();
 builder.Services.AddCors(options => options.AddPolicy(RendererCorsPolicy, policy => policy
     .WithOrigins(
         "http://127.0.0.1:5173",
@@ -24,6 +27,7 @@ app.UseCors(RendererCorsPolicy);
 app.MapSessionEndpoints();
 app.MapPersonaEndpoints();
 app.MapEventEndpoints();
+app.MapTranscribeEndpoints();
 app.MapHub<SessionHub>("/hubs/session");
 
 app.Run();
