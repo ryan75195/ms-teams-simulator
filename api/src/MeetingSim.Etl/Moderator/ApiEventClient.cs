@@ -19,8 +19,27 @@ internal sealed class ApiEventClient
         var body = EventPostBodyFactory.FromDecision(decision);
         if (body is null)
         {
+            await Console.Error.WriteLineAsync(
+                $"[skipped] decision '{decision.Action}' had no postable body — likely missing personaId or text.")
+                .ConfigureAwait(false);
             return;
         }
+
+        var response = await _http
+            .PostAsJsonAsync<JsonObject>($"/sessions/{_sessionId}/events", body, cancellationToken)
+            .ConfigureAwait(false);
+
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task PostHandLowered(string personaId, CancellationToken cancellationToken = default)
+    {
+        var body = new JsonObject
+        {
+            ["kind"] = "hand-raise",
+            ["personaId"] = personaId,
+            ["raised"] = false,
+        };
 
         var response = await _http
             .PostAsJsonAsync<JsonObject>($"/sessions/{_sessionId}/events", body, cancellationToken)

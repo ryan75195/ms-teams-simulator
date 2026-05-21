@@ -1,5 +1,4 @@
-﻿using System.Text;
-using MeetingSim.Core.Personas;
+﻿using MeetingSim.Core.Personas;
 
 namespace MeetingSim.Etl.Moderator;
 
@@ -9,91 +8,122 @@ internal static class PromptBuilder
 
     public static string BuildSystemPrompt(IReadOnlyList<Persona> roster)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine("You are the AI director of a simulated audience for a presentation rehearsal.");
-        sb.AppendLine();
-        sb.AppendLine("Personas in the audience (only these may react):");
-        foreach (var persona in roster)
-        {
-            if (persona.Archetype == Archetype.User)
-            {
-                continue;
-            }
+        var personaList = string.Join(
+            "\n",
+            roster
+                .Where(p => p.Archetype != Archetype.User)
+                .Select(p => $"- {p.Name} (id: {p.Id}) — {DescribeArchetype(p.Archetype)}"));
 
-            sb.Append("- ");
-            sb.Append(persona.Name);
-            sb.Append(" (id: ");
-            sb.Append(persona.Id);
-            sb.Append(") — ");
-            sb.AppendLine(DescribeArchetype(persona.Archetype));
-        }
-        sb.AppendLine();
-        sb.AppendLine("Your job: decide whether any persona should react to the presenter's most recent line.");
-        sb.AppendLine();
-        sb.AppendLine("Most lines need no reaction (action = \"none\"). Only react when the moment genuinely warrants it:");
-        sb.AppendLine("- The presenter directly names a persona (\"Anuj, you had a question?\") → that persona MUST react with action = \"speak\".");
-        sb.AppendLine("- A strong claim a skeptic would probe (a number, a forecast, a generalisation).");
-        sb.AppendLine("- A clarifying need a curious persona would surface.");
-        sb.AppendLine("- A win moment a cheerleader would amplify.");
-        sb.AppendLine();
-        sb.AppendLine("Stay quiet on intros, transitions, throat-clearing, or anything that wouldn't naturally provoke a reply in a real meeting.");
-        sb.AppendLine();
-        sb.AppendLine("When you do react:");
-        sb.AppendLine("- Pick exactly one persona whose archetype best fits the moment.");
-        sb.AppendLine("- Generate `text` in that persona's voice (one or two sentences max).");
-        sb.AppendLine("- For \"speak\" / \"chat\": include the actual question or comment in `text`. Leave `raised` null.");
-        sb.AppendLine("- For \"hand-raise\": set `raised` to true and leave `text` null.");
-        sb.AppendLine("- For \"none\": set `personaId`, `text`, and `raised` to null.");
-        sb.AppendLine("- Always include a one-sentence `reasoning` explaining the call.");
-        return sb.ToString();
+        return $"""
+            You are the AI director of a simulated audience for a presentation rehearsal. You decide how the audience should react to the presenter's most recent line.
+
+            Personas in the audience (only these may react):
+            {personaList}
+
+            ACTION HIERARCHY — speaking out loud is RARE. The audience does not interrupt the presenter. Choose actions in this order of preference:
+
+            1. action="speak" — ONLY in two situations:
+               (a) the presenter says a persona's first name (direct callout — that persona MUST speak), or
+               (b) the persona is currently the ACTIVE RESPONDER and the presenter is mid-dialogue with them (their reply continues the conversation).
+               Never use "speak" for spontaneous engagement. Speaking interrupts; in a real meeting people don't just talk over the presenter.
+
+            2. action="hand-raise" — the default for engagement-worthy moments. Use this when:
+               - A skeptic wants to probe a strong claim (number, forecast, generalisation).
+               - A curious persona wants clarification on something glossed over.
+               - The presenter just asked an open question to the room ("what do you think?", "thoughts?", "any concerns?", "anyone?"). On an open question you MUST pick a persona to raise their hand — never return "none" just because the question wasn't aimed at someone specific. A curious or skeptic archetype is the safe default if nothing else fits.
+               - The presenter said something a persona genuinely has a question about.
+               Set `raised`=true and pick a specific personaId. Leave `text` null. The presenter will see the hand up and may or may not call on them — that's up to the presenter.
+
+            3. action="chat" — a quick side-channel comment that does NOT interrupt. Good for "+1", "interesting", a short clarifying question that doesn't need air time, an aside.
+
+            4. action="react" — emoji reactions to wins, surprises, or applause moments. The least intrusive.
+
+            5. action="none" — default for intros, transitions, filler, throat-clearing, and anything that doesn't warrant audience response. Most lines fall here.
+
+            ACTIVE DIALOGUE RULE (overrides #5 only): when a persona is marked as the active responder, the presenter is in conversation with that persona. Default to action="speak" with personaId=<active responder> for nearly every line from the presenter — including brief pleasantries ("thanks", "got it", "right"), short answers, follow-ups, defensive justifications, and probes back. Match the conversational register: a one-line acknowledgement is fine; a follow-up question is better; a probe fits a strong claim. Do NOT swap to a different persona of the same archetype. Only switch personas if (a) the presenter says another persona's first name, or (b) the presenter clearly pivots to a different agenda item (a new topic, not a deeper layer of the current one). "Forecasts" → "data behind the forecasts" is the SAME dialogue. Only return "none" during active dialogue if the line is literal noise (one-syllable filler, self-correction, STT garble like "Atşu").
+
+            HAND-UP PRIORITY: if personas already have their hand up and the presenter asks an open question or pauses, the persona who has been waiting gets first preference — but they still don't speak until the presenter calls their name. They just keep their hand up.
+
+            Output format — `personaId` is REQUIRED for any action other than "none". Pick the specific persona who is acting; do not return a null personaId for "speak", "hand-raise", "chat", or "react".
+            - "speak": personaId = the speaker; text = what they say (1-2 sentences); raised = null.
+            - "hand-raise": personaId = whose hand goes up; text = null; raised = true.
+            - "chat": personaId = author of the chat; text = the message; raised = null.
+            - "react": personaId = the reactor; text = null; raised = null.
+            - "none": personaId = null; text = null; raised = null.
+            - Always include a one-sentence `reasoning` explaining the call.
+            """;
     }
 
     public static string BuildUserPrompt(
         string currentChunk,
         IReadOnlyList<string> recentChunks,
         IReadOnlyList<string> recentSpeakers,
-        string? calledOutPersonaId = null)
+        string? calledOutPersonaId = null,
+        string? activeResponderId = null,
+        IReadOnlyCollection<string>? handsUp = null)
     {
-        var sb = new StringBuilder();
-        IReadOnlyList<string> context = recentChunks.Count > MaxContextChunks
-            ? recentChunks.Skip(recentChunks.Count - MaxContextChunks).ToList()
-            : recentChunks;
+        var sections = new List<string>();
 
-        if (context.Count > 0)
+        var contextBlock = BuildContextSection(recentChunks);
+        if (contextBlock is not null)
         {
-            sb.AppendLine("Recent transcript so far:");
-            foreach (var chunk in context)
-            {
-                sb.Append("> ");
-                sb.AppendLine(chunk);
-            }
-            sb.AppendLine();
+            sections.Add(contextBlock);
         }
 
-        if (recentSpeakers.Count > 0)
+        if (!string.IsNullOrEmpty(activeResponderId))
         {
-            sb.Append("Recently spoke: ");
-            sb.Append(string.Join(", ", recentSpeakers));
-            sb.AppendLine(".");
-            sb.AppendLine("Pick someone else unless the presenter directly addresses one of them by name.");
-            sb.AppendLine();
+            sections.Add($"""
+                ACTIVE DIALOGUE: '{activeResponderId}' is currently mid-conversation with the presenter. Default: action="speak" with personaId="{activeResponderId}". Reply briefly even to short follow-ups, acknowledgements, or answers — that's how the dialogue stays alive. Do NOT return action="none" unless the line is literal noise (one-syllable filler, self-correction, STT garble). Do NOT pick a different persona unless (a) the presenter says another persona's first name, or (b) the line is unmistakably a new agenda item (a new slide topic, not a deeper layer of the current one).
+                """);
+        }
+        else if (recentSpeakers.Count > 0)
+        {
+            sections.Add($"""
+                Recently spoke: {string.Join(", ", recentSpeakers)}.
+                Pick someone else unless the presenter directly addresses one of them by name.
+                """);
+        }
+
+        if (handsUp is { Count: > 0 })
+        {
+            sections.Add($"""
+                Hands up: {string.Join(", ", handsUp)}.
+                Prefer one of these personas when an open question fits their archetype.
+                """);
         }
 
         if (!string.IsNullOrEmpty(calledOutPersonaId))
         {
-            sb.Append("DIRECT CALLOUT: the presenter just named persona id '");
-            sb.Append(calledOutPersonaId);
-            sb.AppendLine("' by their first name.");
-            sb.AppendLine("This persona MUST respond with action='speak'. The recently-spoke suppression does NOT apply when directly addressed.");
-            sb.AppendLine();
+            sections.Add($"""
+                DIRECT CALLOUT: the presenter just named persona id '{calledOutPersonaId}' by their first name.
+                This persona MUST respond with action='speak'. The recently-spoke and active-dialogue rules do NOT apply when directly addressed.
+                """);
         }
 
-        sb.AppendLine("Presenter just said:");
-        sb.Append("> ");
-        sb.AppendLine(currentChunk);
-        sb.AppendLine();
-        sb.Append("Should any persona react now? Return your decision as JSON.");
-        return sb.ToString();
+        sections.Add($"""
+            Presenter just said:
+            > {currentChunk}
+
+            Should any persona react now? Return your decision as JSON.
+            """);
+
+        return string.Join("\n\n", sections);
+    }
+
+    private static string? BuildContextSection(IReadOnlyList<string> recentChunks)
+    {
+        if (recentChunks.Count == 0)
+        {
+            return null;
+        }
+        IReadOnlyList<string> context = recentChunks.Count > MaxContextChunks
+            ? recentChunks.Skip(recentChunks.Count - MaxContextChunks).ToList()
+            : recentChunks;
+        var lines = string.Join("\n", context.Select(c => $"> {c}"));
+        return $"""
+            Recent transcript so far:
+            {lines}
+            """;
     }
 
     private static string DescribeArchetype(Archetype archetype) => archetype switch
