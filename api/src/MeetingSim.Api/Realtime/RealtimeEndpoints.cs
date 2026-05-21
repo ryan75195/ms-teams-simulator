@@ -15,6 +15,7 @@ public static class RealtimeEndpoints
 {
     private const int BrowserReceiveBufferSize = 16 * 1024;
     private const string PartialMessageType = "transcript.partial";
+    private static readonly TimeSpan MaxSessionDuration = TimeSpan.FromHours(4);
 
     public static IEndpointRouteBuilder MapRealtimeEndpoints(this IEndpointRouteBuilder app)
     {
@@ -42,8 +43,10 @@ public static class RealtimeEndpoints
         }
 
         using var browser = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
-        await using var transcription = await client.Open(context.RequestAborted).ConfigureAwait(false);
-        await BridgePumps(id, browser, transcription, events, hub, context.RequestAborted).ConfigureAwait(false);
+        using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        sessionCts.CancelAfter(MaxSessionDuration);
+        await using var transcription = await client.Open(sessionCts.Token).ConfigureAwait(false);
+        await BridgePumps(id, browser, transcription, events, hub, sessionCts.Token).ConfigureAwait(false);
         await CloseBrowserQuietly(browser).ConfigureAwait(false);
     }
 
