@@ -2,6 +2,7 @@
 using MeetingSim.Core.Events;
 using MeetingSim.Core.Events.Interfaces;
 using MeetingSim.Core.Sessions.Interfaces;
+using Microsoft.AspNetCore.SignalR;
 
 namespace MeetingSim.Api.Events;
 
@@ -15,11 +16,12 @@ public static class EventEndpoints
         return app;
     }
 
-    private static IResult AppendEvent(
+    private static async Task<IResult> AppendEvent(
         Guid id,
         EventRequest request,
         ISessionStore sessions,
-        IEventStore events)
+        IEventStore events,
+        IHubContext<SessionHub> hub)
     {
         if (sessions.TryGet(id) is null)
         {
@@ -27,6 +29,11 @@ public static class EventEndpoints
         }
 
         var appended = events.Append(id, (eventId, ts) => Materialise(request, eventId, ts));
+        await hub.Clients
+            .Group(SessionHub.GroupName(id))
+            .SendAsync(SessionHub.EventMethodName, appended)
+            .ConfigureAwait(false);
+
         return Results.Created($"/sessions/{id}/events/{appended.Id}", appended);
     }
 

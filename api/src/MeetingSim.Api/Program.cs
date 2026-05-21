@@ -8,6 +8,7 @@ const string RendererCorsPolicy = "renderer";
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddCoreServices();
+builder.Services.AddSignalR();
 builder.Services.AddCors(options => options.AddPolicy(RendererCorsPolicy, policy => policy
     .WithOrigins(
         "http://127.0.0.1:5173",
@@ -23,5 +24,8 @@ app.UseCors(RendererCorsPolicy);
 app.MapSessionEndpoints();
 app.MapPersonaEndpoints();
 app.MapEventEndpoints();
+app.MapHub<SessionHub>("/hubs/session");
 
 app.Run();
+
+public partial class Program;
