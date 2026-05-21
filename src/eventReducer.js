@@ -1,10 +1,12 @@
 export const MAX_CHAT_HISTORY = 80;
+export const MAX_TRANSCRIPT_HISTORY = 200;
 
 export const initialView = {
   speaking: {},
   hands: {},
   chat: [],
   reactions: [],
+  transcripts: [],
   lastEventId: 0,
 };
 
@@ -43,6 +45,13 @@ export function reduceEvent(state, event) {
           ...state.reactions,
           { ...event, x: 25 + ((event.id * 23) % 50) },
         ],
+        lastEventId,
+      };
+    case "transcript":
+      if (!event.text) return { ...state, lastEventId };
+      return {
+        ...state,
+        transcripts: [...state.transcripts, event].slice(-MAX_TRANSCRIPT_HISTORY),
         lastEventId,
       };
     default:

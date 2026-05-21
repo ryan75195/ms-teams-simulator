@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import workletUrl from "./pcmWorklet.js?url";
 
 const TARGET_SAMPLE_RATE = 24000;
+const IDLE_TIMEOUT_MS = 90_000;
+const IDLE_CHECK_INTERVAL_MS = 5_000;
+const AUDIO_THRESHOLD_PCM16 = 1500;
 
 export function useLiveMic({ wsUrl, onPartial, onError }) {
   const [state, setState] = useState("idle");
@@ -11,10 +14,17 @@ export function useLiveMic({ wsUrl, onPartial, onError }) {
   const streamRef = useRef(null);
   const nodeRef = useRef(null);
   const sourceRef = useRef(null);
+  const lastAudioAtRef = useRef(0);
+  const idleCheckRef = useRef(null);
 
   const stop = useCallback(() => {
     if (!runningRef.current) return;
     runningRef.current = false;
+
+    if (idleCheckRef.current) {
+      window.clearInterval(idleCheckRef.current);
+      idleCheckRef.current = null;
+    }
 
     sourceRef.current?.disconnect();
     sourceRef.current = null;
@@ -109,11 +119,23 @@ export function useLiveMic({ wsUrl, onPartial, onError }) {
       nodeRef.current = node;
 
       node.port.onmessage = (e) => {
+        if (frameHasAudio(e.data)) {
+          lastAudioAtRef.current = Date.now();
+        }
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           wsRef.current.send(e.data);
         }
       };
       source.connect(node);
+
+      lastAudioAtRef.current = Date.now();
+      idleCheckRef.current = window.setInterval(() => {
+        if (!runningRef.current) return;
+        if (Date.now() - lastAudioAtRef.current >= IDLE_TIMEOUT_MS) {
+          onError?.(`Live mic auto-paused after ${IDLE_TIMEOUT_MS / 1000}s of silence — click to resume.`);
+          stop();
+        }
+      }, IDLE_CHECK_INTERVAL_MS);
 
       setState("live");
     } catch (e) {
@@ -131,4 +153,15 @@ export function useLiveMic({ wsUrl, onPartial, onError }) {
   );
 
   return { state, start, stop };
+}
+
+function frameHasAudio(arrayBuffer) {
+  const samples = new Int16Array(arrayBuffer);
+  for (let i = 0; i < samples.length; i += 1) {
+    const v = samples[i];
+    if (v > AUDIO_THRESHOLD_PCM16 || v < -AUDIO_THRESHOLD_PCM16) {
+      return true;
+    }
+  }
+  return false;
 }

@@ -29,11 +29,12 @@ import { LiveMicControl } from "./components/LiveMicControl";
 import { PeoplePane } from "./components/PeoplePane";
 import { Ribbon } from "./components/Ribbon";
 import { SimPanel } from "./components/SimPanel";
+import { TranscriptPane } from "./components/TranscriptPane";
 import "./styles.css";
 
 const API_URL = import.meta.env.VITE_API_URL || null;
 const WS_BASE_URL = API_URL ? API_URL.replace(/^http/, "ws") : null;
-const PARTIAL_TRANSCRIPT_LINGER_MS = 1500;
+const PARTIAL_TRANSCRIPT_CLEAR_MS = 2000;
 const YOU_PERSONA_ID = "you";
 
 function buildSeedChat() {
@@ -325,7 +326,7 @@ function App() {
     }
     partialClearTimerRef.current = window.setTimeout(
       () => setPartialTranscript(""),
-      PARTIAL_TRANSCRIPT_LINGER_MS
+      PARTIAL_TRANSCRIPT_CLEAR_MS
     );
   }
 
@@ -448,6 +449,13 @@ function App() {
               onClose={() => setRightPane(null)}
             />
           )}
+          {rightPane === "transcript" && (
+            <TranscriptPane
+              transcripts={apiMode ? api.view.transcripts : []}
+              partial={partialTranscript}
+              onClose={() => setRightPane(null)}
+            />
+          )}
         </div>
 
         <LiveMicControl
@@ -456,7 +464,7 @@ function App() {
           onPartial={handlePartialTranscript}
         />
 
-        {partialTranscript && (
+        {partialTranscript && rightPane !== "transcript" && (
           <div className="partial-transcript" aria-live="polite">
             {partialTranscript}
           </div>
