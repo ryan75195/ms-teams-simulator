@@ -59,6 +59,55 @@ export function useSession(apiUrl, options = {}) {
   const [view, setView] = useState(initialView);
   const connectionRef = useRef(null);
 
+  const apiUrlRef = useRef(apiUrl);
+  const sessionIdRef = useRef(sessionId);
+  const audioQueueRef = useRef([]);
+  const isPlayingRef = useRef(false);
+
+  useEffect(() => {
+    apiUrlRef.current = apiUrl;
+  }, [apiUrl]);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  const playNext = useCallback(() => {
+    if (audioQueueRef.current.length === 0) {
+      isPlayingRef.current = false;
+      return;
+    }
+    isPlayingRef.current = true;
+    const { eventId, personaId } = audioQueueRef.current.shift();
+    const url = `${apiUrlRef.current}/sessions/${sessionIdRef.current}/audio/${eventId}`;
+    const audio = new Audio(url);
+    let settled = false;
+    const settle = (clearSpeakingState) => {
+      if (settled) return;
+      settled = true;
+      if (clearSpeakingState) {
+        setView((prev) => clearSpeaking(prev, personaId));
+      }
+      playNext();
+    };
+    audio.addEventListener("ended", () => settle(true));
+    audio.addEventListener("error", () => settle(false));
+    audio.play().catch((e) => {
+      console.warn(`Audio play failed for event ${eventId}:`, e);
+      settle(false);
+    });
+  }, []);
+
+  const enqueueAudio = useCallback(
+    (eventId, personaId) => {
+      if (!apiUrlRef.current || !sessionIdRef.current) return;
+      audioQueueRef.current.push({ eventId, personaId });
+      if (!isPlayingRef.current) {
+        playNext();
+      }
+    },
+    [playNext]
+  );
+
   useEffect(() => {
     if (!apiUrl) return undefined;
     let cancelled = false;
@@ -101,6 +150,7 @@ export function useSession(apiUrl, options = {}) {
         window.setTimeout(() => {
           setView((prev) => clearSpeaking(prev, evt.personaId));
         }, ttl);
+        enqueueAudio(evt.id, evt.personaId);
       }
 
       if (evt.kind === "reaction") {
@@ -128,7 +178,7 @@ export function useSession(apiUrl, options = {}) {
       setConnected(false);
       connection.stop().catch(() => {});
     };
-  }, [sessionId, apiUrl]);
+  }, [sessionId, apiUrl, enqueueAudio]);
 
   const sendEvent = useCallback(
     async (body) => {
