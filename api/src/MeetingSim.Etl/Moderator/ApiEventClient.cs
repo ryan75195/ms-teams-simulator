@@ -1,9 +1,10 @@
 ﻿using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using MeetingSim.Etl.Moderator.Interfaces;
 
 namespace MeetingSim.Etl.Moderator;
 
-internal sealed class ApiEventClient
+internal sealed class ApiEventClient : IEventPoster
 {
     private readonly HttpClient _http;
     private readonly Guid _sessionId;
@@ -24,12 +25,7 @@ internal sealed class ApiEventClient
                 .ConfigureAwait(false);
             return;
         }
-
-        var response = await _http
-            .PostAsJsonAsync<JsonObject>($"/sessions/{_sessionId}/events", body, cancellationToken)
-            .ConfigureAwait(false);
-
-        response.EnsureSuccessStatusCode();
+        await PostEvent(body, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task PostHandLowered(string personaId, CancellationToken cancellationToken = default)
@@ -40,11 +36,14 @@ internal sealed class ApiEventClient
             ["personaId"] = personaId,
             ["raised"] = false,
         };
+        await PostEvent(body, cancellationToken).ConfigureAwait(false);
+    }
 
+    public async Task PostEvent(JsonObject body, CancellationToken cancellationToken = default)
+    {
         var response = await _http
             .PostAsJsonAsync<JsonObject>($"/sessions/{_sessionId}/events", body, cancellationToken)
             .ConfigureAwait(false);
-
         response.EnsureSuccessStatusCode();
     }
 }
