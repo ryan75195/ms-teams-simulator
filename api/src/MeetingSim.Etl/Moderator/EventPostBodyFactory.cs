@@ -24,11 +24,12 @@ internal static class EventPostBodyFactory
                     ["personaId"] = pid,
                     ["raised"] = decision.Raised ?? true,
                 },
-            "speak" when decision.PersonaId is { Length: > 0 } pid
+            "speak" when decision.PersonaId is { Length: > 0 } pid && decision.Text is { Length: > 0 } text
                 => new JsonObject
                 {
                     ["kind"] = "speak",
                     ["personaId"] = pid,
+                    ["text"] = text,
                     ["durationMs"] = DefaultSpeakDurationMs,
                 },
             _ => null,

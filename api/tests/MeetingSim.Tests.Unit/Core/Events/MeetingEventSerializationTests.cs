@@ -14,7 +14,7 @@ public class MeetingEventSerializationTests
     [Test]
     public void Should_round_trip_a_speak_event_via_polymorphic_serialization()
     {
-        MeetingEvent original = new SpeakEvent(42, DateTimeOffset.UnixEpoch, "anuj", 1200);
+        MeetingEvent original = new SpeakEvent(42, DateTimeOffset.UnixEpoch, "anuj", "Hello there", 1200);
 
         var json = JsonSerializer.Serialize(original, Options);
         var decoded = JsonSerializer.Deserialize<MeetingEvent>(json, Options);

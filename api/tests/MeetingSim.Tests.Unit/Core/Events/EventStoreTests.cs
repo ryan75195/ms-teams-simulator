@@ -6,7 +6,7 @@ namespace MeetingSim.Tests.Unit.Core.Events;
 public class EventStoreTests
 {
     private static SpeakEvent SpeakFactory(long id, DateTimeOffset ts)
-        => new(id, ts, "anuj", 1200);
+        => new(id, ts, "anuj", "test speech", 1200);
 
     [Test]
     public void Should_assign_monotonic_ids_on_append()

@@ -1,4 +1,5 @@
-﻿using MeetingSim.Api.Contracts;
+﻿using MeetingSim.Api.Audio.Interfaces;
+using MeetingSim.Api.Contracts;
 using MeetingSim.Core.Events;
 using MeetingSim.Core.Events.Interfaces;
 using MeetingSim.Core.Sessions.Interfaces;
@@ -21,7 +22,10 @@ public static class EventEndpoints
         EventRequest request,
         ISessionStore sessions,
         IEventStore events,
-        IHubContext<SessionHub> hub)
+        IHubContext<SessionHub> hub,
+        ITextToSpeechService tts,
+        IAudioStore audio,
+        CancellationToken cancellationToken)
     {
         if (sessions.TryGet(id) is null)
         {
@@ -29,12 +33,32 @@ public static class EventEndpoints
         }
 
         var appended = events.Append(id, (eventId, ts) => Materialise(request, eventId, ts));
+
+        if (appended is SpeakEvent speak && !string.IsNullOrWhiteSpace(speak.Text))
+        {
+            await SynthesiseAndStore(id, speak, tts, audio, cancellationToken).ConfigureAwait(false);
+        }
+
         await hub.Clients
             .Group(SessionHub.GroupName(id))
-            .SendAsync(SessionHub.EventMethodName, appended)
+            .SendAsync(SessionHub.EventMethodName, appended, cancellationToken)
             .ConfigureAwait(false);
 
         return Results.Created($"/sessions/{id}/events/{appended.Id}", appended);
+    }
+
+    private static async Task SynthesiseAndStore(
+        Guid sessionId,
+        SpeakEvent speak,
+        ITextToSpeechService tts,
+        IAudioStore audio,
+        CancellationToken cancellationToken)
+    {
+        var clip = await tts
+            .Generate(speak.PersonaId, speak.Text, cancellationToken)
+            .ConfigureAwait(false);
+
+        audio.Put(sessionId, speak.Id, clip);
     }
 
     private static IResult ReadSinceEvents(
@@ -53,7 +77,7 @@ public static class EventEndpoints
 
     private static MeetingEvent Materialise(EventRequest request, long id, DateTimeOffset ts) => request switch
     {
-        SpeakEventRequest s => new SpeakEvent(id, ts, s.PersonaId, s.DurationMs),
+        SpeakEventRequest s => new SpeakEvent(id, ts, s.PersonaId, s.Text, s.DurationMs),
         HandRaiseEventRequest h => new HandRaiseEvent(id, ts, h.PersonaId, h.Raised),
         ChatMessageEventRequest c => new ChatMessageEvent(id, ts, c.PersonaId, c.Text),
         ReactionEventRequest r => new ReactionEvent(id, ts, r.Tile, r.Emoji),

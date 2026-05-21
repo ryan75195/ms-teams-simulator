@@ -51,9 +51,9 @@ public class EventPostBodyFactoryTests
     }
 
     [Test]
-    public void Should_map_speak_decision_with_default_duration()
+    public void Should_map_speak_decision_with_text_and_default_duration()
     {
-        var decision = new ModeratorDecision("speak", "kayo", null, null, "cheering on");
+        var decision = new ModeratorDecision("speak", "kayo", "How can we double down on this?", null, "cheering on");
 
         var body = EventPostBodyFactory.FromDecision(decision);
 
@@ -62,6 +62,7 @@ public class EventPostBodyFactoryTests
         {
             Assert.That(body!["kind"]!.GetValue<string>(), Is.EqualTo("speak"));
             Assert.That(body["personaId"]!.GetValue<string>(), Is.EqualTo("kayo"));
+            Assert.That(body["text"]!.GetValue<string>(), Is.EqualTo("How can we double down on this?"));
             Assert.That(body["durationMs"]!.GetValue<int>(), Is.EqualTo(EventPostBodyFactory.DefaultSpeakDurationMs));
         });
     }
@@ -95,7 +96,7 @@ public class EventPostBodyFactoryTests
     public void Should_return_null_when_speak_or_hand_raise_is_missing_persona()
     {
         var speakNoPersona = EventPostBodyFactory.FromDecision(
-            new ModeratorDecision("speak", null, null, null, "reason"));
+            new ModeratorDecision("speak", null, "text", null, "reason"));
         var handNoPersona = EventPostBodyFactory.FromDecision(
             new ModeratorDecision("hand-raise", null, null, true, "reason"));
 
@@ -104,6 +105,15 @@ public class EventPostBodyFactoryTests
             Assert.That(speakNoPersona, Is.Null);
             Assert.That(handNoPersona, Is.Null);
         });
+    }
+
+    [Test]
+    public void Should_return_null_when_speak_is_missing_text()
+    {
+        var noText = EventPostBodyFactory.FromDecision(
+            new ModeratorDecision("speak", "anuj", null, null, "reason"));
+
+        Assert.That(noText, Is.Null);
     }
 
     [Test]
