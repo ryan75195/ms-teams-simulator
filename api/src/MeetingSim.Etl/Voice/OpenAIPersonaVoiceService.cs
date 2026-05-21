@@ -26,6 +26,7 @@ internal sealed class OpenAIPersonaVoiceService : IPersonaVoiceService
         string presenterLine,
         IReadOnlyList<string> recentChunks,
         IReadOnlyList<string> personaPreviousLines,
+        string? currentSlide = null,
         CancellationToken cancellationToken = default)
     {
         if (!_personasById.TryGetValue(personaId, out var persona))
@@ -34,7 +35,7 @@ internal sealed class OpenAIPersonaVoiceService : IPersonaVoiceService
         }
 
         var systemPrompt = BuildSystemPrompt(persona);
-        var userPrompt = BuildUserPrompt(presenterLine, recentChunks, personaPreviousLines);
+        var userPrompt = BuildUserPrompt(presenterLine, recentChunks, personaPreviousLines, currentSlide);
 
         ChatMessage[] messages =
         [
@@ -64,9 +65,18 @@ internal sealed class OpenAIPersonaVoiceService : IPersonaVoiceService
     internal static string BuildUserPrompt(
         string presenterLine,
         IReadOnlyList<string> recentChunks,
-        IReadOnlyList<string> personaPreviousLines)
+        IReadOnlyList<string> personaPreviousLines,
+        string? currentSlide = null)
     {
         var sections = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(currentSlide))
+        {
+            sections.Add($"""
+                Slide on screen (what you can see):
+                {currentSlide}
+                """);
+        }
 
         var context = TakeTail(recentChunks, RecentChunkLimit);
         if (context.Count > 0)

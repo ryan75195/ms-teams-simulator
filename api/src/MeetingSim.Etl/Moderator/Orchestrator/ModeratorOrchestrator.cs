@@ -77,6 +77,7 @@ internal sealed class ModeratorOrchestrator
     {
         var sections = new List<string>();
 
+        AppendSlide(sections, context.CurrentSlide);
         AppendContext(sections, context.RecentChunks);
         AppendState(sections, context);
 
@@ -88,6 +89,18 @@ internal sealed class ModeratorOrchestrator
             """);
 
         return string.Join("\n\n", sections);
+    }
+
+    private static void AppendSlide(List<string> sections, string? slide)
+    {
+        if (string.IsNullOrWhiteSpace(slide))
+        {
+            return;
+        }
+        sections.Add($"""
+            Slide on screen (what the audience can see):
+            {slide}
+            """);
     }
 
     private static void AppendContext(List<string> sections, IReadOnlyList<string> recentChunks)

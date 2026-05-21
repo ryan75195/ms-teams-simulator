@@ -16,6 +16,9 @@ export function SimPanel({
   handsCount,
   onApplause,
   onQA,
+  slideText,
+  onSlideTextChange,
+  slideEditable,
   onClose,
 }) {
   return (
@@ -97,6 +100,18 @@ export function SimPanel({
           <Button onClick={onApplause}>Applause surge</Button>
           <Button onClick={onQA}>Q&amp;A rush</Button>
         </div>
+        {slideEditable && (
+          <label className="sim-field sim-field--slide">
+            <span>Slide on screen <em>(what the audience can see)</em></span>
+            <textarea
+              className="sim-slide"
+              rows={6}
+              placeholder={"e.g.\nQ2 Sales Report\n• EMEA pipeline +18.4% QoQ\n• Mid-market driving growth\n• Avg deal size £48k (+£3k MoM)"}
+              value={slideText}
+              onChange={(e) => onSlideTextChange(e.target.value)}
+            />
+          </label>
+        )}
       </div>
     </aside>
   );

@@ -7,4 +7,5 @@ namespace MeetingSim.Api.Contracts;
 [JsonDerivedType(typeof(HandRaiseEventRequest), "hand-raise")]
 [JsonDerivedType(typeof(ChatMessageEventRequest), "chat")]
 [JsonDerivedType(typeof(ReactionEventRequest), "reaction")]
+[JsonDerivedType(typeof(SlideUpdateEventRequest), "slide-update")]
 public abstract record EventRequest;
