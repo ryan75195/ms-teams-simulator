@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Tooltip } from "@fluentui/react-components";
 import {
   CameraOffRegular,
   CameraRegular,
@@ -18,20 +17,19 @@ import { formatElapsed } from "../helpers";
 
 function IconButton({ label, icon, active, onClick, badge, danger }) {
   return (
-    <Tooltip content={label} relationship="label" positioning="below" withArrow={false}>
-      <button
-        type="button"
-        className={`ribbon-btn${active ? " is-active" : ""}${danger ? " is-danger" : ""}`}
-        onClick={onClick}
-        aria-label={label}
-        aria-pressed={active || undefined}
-      >
-        <span className="ribbon-icon">{icon}</span>
-        {badge !== undefined && (
-          <span className="ribbon-badge">{badge > 999 ? "999+" : badge}</span>
-        )}
-      </button>
-    </Tooltip>
+    <button
+      type="button"
+      className={`ribbon-btn${active ? " is-active" : ""}${danger ? " is-danger" : ""}`}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      aria-pressed={active || undefined}
+    >
+      <span className="ribbon-icon">{icon}</span>
+      {badge !== undefined && (
+        <span className="ribbon-badge">{badge > 999 ? "999+" : badge}</span>
+      )}
+    </button>
   );
 }
 
