@@ -21,6 +21,7 @@ import {
   reactionEmoji,
 } from "./constants";
 import { makeParticipant } from "./helpers";
+import { useSession } from "./useSession";
 import { ChatPane } from "./components/ChatPane";
 import { ContentStage } from "./components/ContentStage";
 import { Gallery } from "./components/Gallery";
@@ -28,6 +29,9 @@ import { PeoplePane } from "./components/PeoplePane";
 import { Ribbon } from "./components/Ribbon";
 import { SimPanel } from "./components/SimPanel";
 import "./styles.css";
+
+const API_URL = import.meta.env.VITE_API_URL || null;
+const YOU_PERSONA_ID = "you";
 
 function buildSeedChat() {
   const now = Date.now();
@@ -43,14 +47,17 @@ function buildSeedChat() {
 }
 
 function App() {
+  const apiMode = !!API_URL;
+  const api = useSession(API_URL, { audienceSize: INITIAL_AUDIENCE });
+
   const [audienceSize, setAudienceSize] = useState(INITIAL_AUDIENCE);
   const [engagement, setEngagement] = useState(5);
   const [noise, setNoise] = useState(2);
   const [elapsed, setElapsed] = useState(INITIAL_ELAPSED_SECONDS);
-  const [participants, setParticipants] = useState(() =>
+  const [localParticipants, setLocalParticipants] = useState(() =>
     Array.from({ length: INITIAL_AUDIENCE }, (_, i) => makeParticipant(i))
   );
-  const [chat, setChat] = useState(buildSeedChat);
+  const [localChat, setLocalChat] = useState(buildSeedChat);
   const [chatDraft, setChatDraft] = useState("");
   const [reactionFloats, setReactionFloats] = useState([]);
   const [rightPane, setRightPane] = useState("chat");
@@ -60,14 +67,14 @@ function App() {
   const [cameraOff, setCameraOff] = useState(true);
   const [muted, setMuted] = useState(true);
   const [sharing, setSharing] = useState(true);
-  const [handRaised, setHandRaised] = useState(false);
+  const [localHandRaised, setLocalHandRaised] = useState(false);
 
   const chatIdRef = useRef(100);
   const reactionIdRef = useRef(0);
 
-  // Resize participant list when audienceSize changes; preserve existing state.
   useEffect(() => {
-    setParticipants((prev) => {
+    if (apiMode) return;
+    setLocalParticipants((prev) => {
       if (audienceSize === prev.length) return prev;
       if (audienceSize > prev.length) {
         const add = Array.from(
@@ -78,23 +85,19 @@ function App() {
       }
       return prev.slice(0, audienceSize);
     });
-  }, [audienceSize]);
+  }, [audienceSize, apiMode]);
 
-  // Tick the meeting clock.
   useEffect(() => {
     const t = window.setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => window.clearInterval(t);
   }, []);
 
-  // Tag the document root once when running inside Electron so the CSS
-  // can drop the centered-window styling and fill the OS window instead.
   useEffect(() => {
     if (typeof window !== "undefined" && window.electronApp?.isElectron) {
       document.documentElement.classList.add("is-electron");
     }
   }, []);
 
-  // Teams-style keyboard shortcuts. Functional setters keep this stable.
   useEffect(() => {
     function onKey(e) {
       const k = e.key.toLowerCase();
@@ -107,7 +110,7 @@ function App() {
           setCameraOff((v) => !v);
         } else if (k === "k") {
           e.preventDefault();
-          setHandRaised((v) => !v);
+          toggleHand();
         }
       } else if (e.ctrlKey && !e.shiftKey && k === "e") {
         const target = e.target;
@@ -119,23 +122,24 @@ function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
 
-  // Mirror user-controlled flags onto participants[YOU_INDEX].
   useEffect(() => {
-    setParticipants((prev) => {
+    if (apiMode) return;
+    setLocalParticipants((prev) => {
       const me = prev[YOU_INDEX];
-      if (!me || (me.hand === handRaised && me.muted === muted)) return prev;
+      if (!me || (me.hand === localHandRaised && me.muted === muted)) return prev;
       const next = prev.slice();
-      next[YOU_INDEX] = { ...me, hand: handRaised, muted };
+      next[YOU_INDEX] = { ...me, hand: localHandRaised, muted };
       return next;
     });
-  }, [handRaised, muted]);
+  }, [localHandRaised, muted, apiMode]);
 
-  // Audience activity loop: speakers + hand raises.
   useEffect(() => {
+    if (apiMode) return undefined;
     const t = window.setInterval(() => {
-      setParticipants((prev) => {
+      setLocalParticipants((prev) => {
         const speakChance = 0.02 + noise * 0.005;
         const handChance = 0.002 + engagement * 0.0014;
         const handDropChance = 0.12;
@@ -154,16 +158,15 @@ function App() {
       });
     }, ACTIVITY_TICK_MS);
     return () => window.clearInterval(t);
-  }, [engagement, noise]);
+  }, [engagement, noise, apiMode]);
 
-  // Auto chat trickle.
   useEffect(() => {
-    if (!autoChat) return undefined;
+    if (apiMode || !autoChat) return undefined;
     const t = window.setInterval(() => {
       if (Math.random() >= engagement / 12) return;
       const pIndex = Math.floor(Math.random() * Math.max(1, audienceSize));
       const text = chatPrompts[Math.floor(Math.random() * chatPrompts.length)];
-      setChat((prev) => {
+      setLocalChat((prev) => {
         const id = ++chatIdRef.current;
         return [...prev, { id, p: pIndex, text, ts: Date.now() }].slice(
           -MAX_CHAT_HISTORY
@@ -171,21 +174,20 @@ function App() {
       });
     }, CHAT_TICK_MS);
     return () => window.clearInterval(t);
-  }, [autoChat, engagement, audienceSize]);
+  }, [autoChat, engagement, audienceSize, apiMode]);
 
-  // Auto reactions float.
   useEffect(() => {
-    if (!autoReactions) return undefined;
+    if (apiMode || !autoReactions) return undefined;
     const tileCount = sharing ? FILMSTRIP_SIZE : GALLERY_SIZE;
     const t = window.setInterval(() => {
       if (Math.random() >= engagement / 8) return;
-      spawnReaction(tileCount);
+      spawnLocalReaction(tileCount);
     }, REACTION_TICK_MS);
     return () => window.clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoReactions, engagement, sharing]);
+  }, [autoReactions, engagement, sharing, apiMode]);
 
-  function spawnReaction(tileCount, emoji, tileIndex) {
+  function spawnLocalReaction(tileCount, emoji, tileIndex) {
     const e =
       emoji || reactionEmoji[Math.floor(Math.random() * reactionEmoji.length)];
     const tile =
@@ -199,27 +201,65 @@ function App() {
   }
 
   function react() {
-    spawnReaction(sharing ? FILMSTRIP_SIZE : GALLERY_SIZE);
+    const tileCount = sharing ? FILMSTRIP_SIZE : GALLERY_SIZE;
+    if (apiMode) {
+      api.send.event({
+        kind: "reaction",
+        tile: Math.floor(Math.random() * tileCount),
+        emoji:
+          reactionEmoji[Math.floor(Math.random() * reactionEmoji.length)],
+      });
+      return;
+    }
+    spawnLocalReaction(tileCount);
   }
 
   function applauseSurge() {
     const tileCount = sharing ? FILMSTRIP_SIZE : GALLERY_SIZE;
     for (let i = 0; i < APPLAUSE_BURST_COUNT; i += 1) {
+      const emoji = i % 3 === 0 ? "🎉" : "👏";
+      const tile = Math.floor(Math.random() * tileCount);
       window.setTimeout(() => {
-        spawnReaction(
-          tileCount,
-          i % 3 === 0 ? "🎉" : "👏",
-          Math.floor(Math.random() * tileCount)
-        );
+        if (apiMode) {
+          api.send.event({ kind: "reaction", tile, emoji });
+        } else {
+          spawnLocalReaction(tileCount, emoji, tile);
+        }
       }, i * APPLAUSE_STEP_MS);
     }
   }
 
   function questionRush() {
+    if (apiMode) {
+      const speakers =
+        api.personas?.roster?.filter((p) => p.id !== YOU_PERSONA_ID) ?? [];
+      if (speakers.length === 0) return;
+      qaRushQuestions.forEach((text, idx) => {
+        const persona = speakers[idx % speakers.length];
+        window.setTimeout(() => {
+          api.send.event({
+            kind: "chat",
+            personaId: persona.id,
+            text,
+          });
+        }, idx * 250);
+      });
+      qaRushQuestions.slice(0, 3).forEach((_, idx) => {
+        const persona = speakers[(idx + 1) % speakers.length];
+        window.setTimeout(() => {
+          api.send.event({
+            kind: "hand-raise",
+            personaId: persona.id,
+            raised: true,
+          });
+        }, idx * 350);
+      });
+      return;
+    }
     qaRushQuestions.forEach((text, idx) => {
       window.setTimeout(() => {
         const pIdx = (idx + 8) % Math.max(1, audienceSize);
-        setChat((prev) => {
+        setLocalChat((prev) => {
           const id = ++chatIdRef.current;
           return [
             ...prev,
@@ -228,7 +268,7 @@ function App() {
         });
       }, idx * 250);
     });
-    setParticipants((prev) =>
+    setLocalParticipants((prev) =>
       prev.map((p, i) =>
         i > 0 && i < 25
           ? { ...p, hand: Math.random() > 0.4 ? true : p.hand }
@@ -240,42 +280,89 @@ function App() {
   function sendChat() {
     const text = chatDraft.trim();
     if (!text) return;
-    setChat((prev) => {
-      const id = ++chatIdRef.current;
-      return [...prev, { id, p: YOU_INDEX, text, ts: Date.now() }].slice(
-        -MAX_CHAT_HISTORY
-      );
-    });
+    if (apiMode) {
+      api.send.event({ kind: "chat", personaId: YOU_PERSONA_ID, text });
+    } else {
+      setLocalChat((prev) => {
+        const id = ++chatIdRef.current;
+        return [...prev, { id, p: YOU_INDEX, text, ts: Date.now() }].slice(
+          -MAX_CHAT_HISTORY
+        );
+      });
+    }
     setChatDraft("");
+  }
+
+  const youHandRaised = apiMode
+    ? !!api.view.hands[YOU_PERSONA_ID]
+    : localHandRaised;
+
+  function toggleHand() {
+    if (apiMode) {
+      api.send.event({
+        kind: "hand-raise",
+        personaId: YOU_PERSONA_ID,
+        raised: !youHandRaised,
+      });
+    } else {
+      setLocalHandRaised((v) => !v);
+    }
   }
 
   function togglePane(target) {
     setRightPane((rp) => (rp === target ? null : target));
   }
 
+  const apiParticipants = useMemo(() => {
+    if (!apiMode || !api.personas) return null;
+    return api.personas.roster.map((p) => ({
+      id: p.id,
+      name: p.name,
+      color: p.color,
+      you: p.id === YOU_PERSONA_ID,
+      speaking: !!api.view.speaking[p.id],
+      hand: !!api.view.hands[p.id],
+      muted: p.id === YOU_PERSONA_ID ? muted : false,
+    }));
+  }, [apiMode, api.personas, api.view.speaking, api.view.hands, muted]);
+
+  const participants = apiParticipants ?? localParticipants;
+
   const gallery = useMemo(
     () => participants.slice(0, GALLERY_SIZE),
     [participants]
   );
 
+  const chat = useMemo(() => {
+    if (!apiMode) return localChat;
+    return api.view.chat.map((c) => ({
+      id: c.id,
+      p: c.personaId,
+      text: c.text,
+      ts: c.ts ? new Date(c.ts).getTime() : Date.now(),
+    }));
+  }, [apiMode, api.view.chat, localChat]);
+
   const reactionsByTile = useMemo(() => {
+    const source = apiMode ? api.view.reactions : reactionFloats;
     const map = new Map();
-    reactionFloats.forEach((r) => {
+    source.forEach((r) => {
       const list = map.get(r.tile) || [];
       list.push(r);
       map.set(r.tile, list);
     });
     return map;
-  }, [reactionFloats]);
+  }, [apiMode, api.view.reactions, reactionFloats]);
 
-  const speakingCount = useMemo(
-    () => participants.filter((p) => p.speaking).length,
-    [participants]
-  );
-  const handsCount = useMemo(
-    () => participants.filter((p) => p.hand).length,
-    [participants]
-  );
+  const speakingCount = useMemo(() => {
+    if (apiMode) return Object.keys(api.view.speaking).length;
+    return participants.filter((p) => p.speaking).length;
+  }, [apiMode, api.view.speaking, participants]);
+
+  const handsCount = useMemo(() => {
+    if (apiMode) return Object.keys(api.view.hands).length;
+    return participants.filter((p) => p.hand).length;
+  }, [apiMode, api.view.hands, participants]);
 
   return (
     <FluentProvider theme={teamsDarkTheme} className="app-root">
@@ -286,8 +373,8 @@ function App() {
           rightPane={rightPane}
           togglePane={togglePane}
           onReact={react}
-          handRaised={handRaised}
-          toggleHand={() => setHandRaised((h) => !h)}
+          handRaised={youHandRaised}
+          toggleHand={toggleHand}
           cameraOff={cameraOff}
           toggleCamera={() => setCameraOff((o) => !o)}
           muted={muted}
@@ -340,7 +427,7 @@ function App() {
           aria-pressed={debugOpen}
         >
           <OptionsRegular />
-          <span>Sim</span>
+          <span>{apiMode ? (api.connected ? "API" : "API…") : "Sim"}</span>
         </button>
 
         {debugOpen && (
