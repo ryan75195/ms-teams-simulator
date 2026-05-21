@@ -124,14 +124,16 @@ ipcMain.handle("window:is-maximized", (e) =>
 Menu.setApplicationMenu(null);
 
 app.whenReady().then(() => {
+  const grantedPermissions = new Set(["media", "audioCapture", "mediaKeySystem"]);
+
   session.defaultSession.setPermissionRequestHandler(
     (_webContents, permission, callback) => {
-      if (permission === "media" || permission === "audioCapture") {
-        callback(true);
-        return;
-      }
-      callback(false);
+      callback(grantedPermissions.has(permission));
     }
+  );
+
+  session.defaultSession.setPermissionCheckHandler(
+    (_webContents, permission) => grantedPermissions.has(permission)
   );
 
   createWindow();

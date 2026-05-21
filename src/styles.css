@@ -1329,6 +1329,25 @@ html.is-electron .teams-app {
   }
 }
 
+.rec-error {
+  position: absolute;
+  right: 120px;
+  bottom: 68px;
+  max-width: 280px;
+  padding: 9px 12px;
+  background: rgba(196, 49, 58, 0.96);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  z-index: 51;
+  animation: simIn 0.18s ease-out;
+}
+
 .sim-panel {
   position: absolute;
   right: 18px;
