@@ -344,6 +344,7 @@ function App() {
     []
   );
 
+  const lastSentSlideRef = useRef("");
   function handleSlideChange(text) {
     setSlideDraft(text);
     if (!apiMode) return;
@@ -351,6 +352,8 @@ function App() {
       window.clearTimeout(slideDebounceRef.current);
     }
     slideDebounceRef.current = window.setTimeout(() => {
+      if (text === lastSentSlideRef.current) return;
+      lastSentSlideRef.current = text;
       api.send.event({ kind: "slide-update", text });
     }, 600);
   }

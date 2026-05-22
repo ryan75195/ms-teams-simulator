@@ -64,12 +64,15 @@ internal sealed class ModeratorOrchestrator
             Personas in the audience (only these may react):
             {personas}
 
-            Each tool's description tells you when to use it. Two principles override everything else:
+            Each tool's description tells you when to use it. Three principles override everything else:
 
             1. Speaking out loud interrupts the presenter — reserve `cast_speak` for direct name callouts and active-dialogue continuations only. If a persona wants to engage, they raise their hand and wait.
             2. The active responder (if set) owns the dialogue. Every follow-up from the presenter — pleasantries, answers, clarifying questions — keeps going to them until the presenter names someone else or pivots to a brand-new topic.
+            3. Direct questions to the room ALWAYS get a response, even small ones. "Can anyone hear me?", "is this working?", "are we good to start?", "ready?" — at least one persona should `send_chat` a quick confirmation ("Hearing you fine" / "All good") or `react` with 👍. NEVER return only `stay_quiet` when the presenter asked the room a yes/no or check-in question.
 
-            You MUST call at least one tool. If no audience reaction is warranted, call `stay_quiet`. You MAY call multiple tools in parallel — for example, one persona raising their hand while another reacts with an emoji.
+            Reserve `stay_quiet` for genuinely contentless lines: throat-clearing ("um", "OK so"), half-sentences, obvious STT garbles. A substantive line from the presenter — a question, a claim, a transition between agenda items — should get at least one reaction (hand-raise, chat, or react).
+
+            You MUST call at least one tool. You MAY call multiple tools in parallel — for example, one persona raising their hand while another reacts with an emoji.
             """;
     }
 
