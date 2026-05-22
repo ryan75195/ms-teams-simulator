@@ -25,3 +25,7 @@ Thumbs.db
 .playwright-mcp/
 teams-*.png
 !teams-reference.png
+
+# Session archive — local transcripts, audio, decisions
+/sessions/
+/api/sessions/

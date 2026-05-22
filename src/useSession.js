@@ -192,12 +192,32 @@ export function useSession(apiUrl, options = {}) {
     [sessionId, apiUrl]
   );
 
+  const endSession = useCallback(async () => {
+    if (!sessionId || !apiUrl) return;
+    try {
+      await fetch(`${apiUrl}/sessions/${sessionId}`, { method: "DELETE" });
+    } catch {
+      // ignore — caller will re-create regardless
+    }
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    try {
+      const fresh = await ensureSession(apiUrl, title, audienceSize);
+      setSessionId(fresh);
+      const personas = await fetchPersonas(apiUrl, fresh, crowdSample);
+      setPersonas(personas);
+      setView(initialView);
+    } catch (e) {
+      setError(e);
+    }
+  }, [sessionId, apiUrl, title, audienceSize, crowdSample]);
+
   return {
     sessionId,
     personas,
     connected,
     view,
     send: { event: sendEvent },
+    endSession,
     error,
   };
 }

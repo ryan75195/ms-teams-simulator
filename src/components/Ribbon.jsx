@@ -155,6 +155,7 @@ export function Ribbon({
   toggleMuted,
   sharing,
   toggleSharing,
+  onLeave,
 }) {
   return (
     <header className="ribbon">
@@ -223,7 +224,12 @@ export function Ribbon({
           active={sharing}
           onClick={toggleSharing}
         />
-        <button className="leave-btn" type="button">
+        <button
+          className="leave-btn"
+          type="button"
+          onClick={onLeave}
+          title="End the session and start a new one"
+        >
           Leave
         </button>
       </nav>

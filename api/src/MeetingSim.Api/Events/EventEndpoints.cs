@@ -1,5 +1,6 @@
 ﻿using MeetingSim.Api.Audio.Interfaces;
 using MeetingSim.Api.Contracts;
+using MeetingSim.Api.Sessions.Interfaces;
 using MeetingSim.Core.Events;
 using MeetingSim.Core.Events.Interfaces;
 using MeetingSim.Core.Sessions.Interfaces;
@@ -25,6 +26,7 @@ public static class EventEndpoints
         IHubContext<SessionHub> hub,
         ITextToSpeechService tts,
         IAudioStore audio,
+        ISessionArchive archive,
         CancellationToken cancellationToken)
     {
         if (sessions.TryGet(id) is null)
@@ -33,10 +35,11 @@ public static class EventEndpoints
         }
 
         var appended = events.Append(id, (eventId, ts) => Materialise(request, eventId, ts));
+        await archive.AppendEvent(id, appended, cancellationToken).ConfigureAwait(false);
 
         if (appended is SpeakEvent speak && !string.IsNullOrWhiteSpace(speak.Text))
         {
-            await SynthesiseAndStore(id, speak, tts, audio, cancellationToken).ConfigureAwait(false);
+            await SynthesiseAndStore(id, speak, tts, audio, archive, cancellationToken).ConfigureAwait(false);
         }
 
         await hub.Clients
@@ -52,6 +55,7 @@ public static class EventEndpoints
         SpeakEvent speak,
         ITextToSpeechService tts,
         IAudioStore audio,
+        ISessionArchive archive,
         CancellationToken cancellationToken)
     {
         var clip = await tts
@@ -59,6 +63,7 @@ public static class EventEndpoints
             .ConfigureAwait(false);
 
         audio.Put(sessionId, speak.Id, clip);
+        await archive.WriteAudio(sessionId, speak.Id, clip.Bytes, cancellationToken).ConfigureAwait(false);
     }
 
     private static IResult ReadSinceEvents(

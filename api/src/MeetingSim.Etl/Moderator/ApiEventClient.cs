@@ -4,7 +4,7 @@ using MeetingSim.Etl.Moderator.Interfaces;
 
 namespace MeetingSim.Etl.Moderator;
 
-internal sealed class ApiEventClient : IEventPoster
+internal sealed class ApiEventClient : IEventPoster, IDecisionPoster
 {
     private readonly HttpClient _http;
     private readonly Guid _sessionId;
@@ -19,6 +19,14 @@ internal sealed class ApiEventClient : IEventPoster
     {
         var response = await _http
             .PostAsJsonAsync<JsonObject>($"/sessions/{_sessionId}/events", body, cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task PostDecision(JsonObject decision, CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PostAsJsonAsync<JsonObject>($"/sessions/{_sessionId}/decisions", decision, cancellationToken)
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
     }
