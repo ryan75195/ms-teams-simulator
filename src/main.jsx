@@ -359,6 +359,20 @@ function App() {
     );
   }
 
+  async function handleLeave() {
+    const ok = window.confirm(
+      "End this session?\n\nThe transcript and audio are saved on disk and you can review them later. A fresh session will start."
+    );
+    if (!ok) return;
+    if (apiMode && api.endSession) {
+      setMuted(true);
+      setSlideDraft("");
+      lastSentSlideRef.current = "";
+      setPartialTranscript("");
+      await api.endSession();
+    }
+  }
+
   const lastSentSlideRef = useRef("");
   function handleSlideChange(text) {
     setSlideDraft(text);
@@ -471,6 +485,7 @@ function App() {
           toggleMuted={() => setMuted((o) => !o)}
           sharing={sharing}
           toggleSharing={() => setSharing((o) => !o)}
+          onLeave={handleLeave}
         />
 
         <div
