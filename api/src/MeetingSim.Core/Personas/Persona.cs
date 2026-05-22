@@ -5,4 +5,5 @@ public sealed record Persona(
     string Name,
     string Color,
     Archetype Archetype,
-    bool IsRoster);
+    bool IsRoster,
+    string? Bio = null);

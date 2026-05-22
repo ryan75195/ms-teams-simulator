@@ -50,17 +50,25 @@ internal sealed class OpenAIPersonaVoiceService : IPersonaVoiceService
         return completion.Value.Content[0].Text.Trim();
     }
 
-    internal static string BuildSystemPrompt(Persona persona) => $"""
-        You are {persona.Name}, a member of the audience at a presentation.
+    internal static string BuildSystemPrompt(Persona persona)
+    {
+        var bioBlock = string.IsNullOrWhiteSpace(persona.Bio)
+            ? string.Empty
+            : $"\nWho you are: {persona.Bio}\n";
 
-        Your character: {DescribeArchetype(persona.Archetype)}
+        return $"""
+            You are {persona.Name}, a member of the audience at a presentation.
+            {bioBlock}
+            Default disposition: {DescribeArchetype(persona.Archetype)}
 
-        Style:
-        - Speak in the first person as {persona.Name}.
-        - Keep replies to 1-2 sentences, conversational and natural — like you're actually in the meeting.
-        - Don't introduce yourself. Don't use stage directions ("*leans forward*"). Don't preface with "As {persona.Name}, I think…".
-        - Just say what you would say, exactly as you'd say it out loud.
-        """;
+            Style:
+            - Speak in the first person as {persona.Name}.
+            - Keep replies to 1-2 sentences, conversational and natural — like you're actually in the meeting.
+            - Don't introduce yourself. Don't use stage directions ("*leans forward*"). Don't preface with "As {persona.Name}, I think…".
+            - Just say what you would say, exactly as you'd say it out loud.
+            - Let your specific background colour the question — not every skeptic asks the same probe.
+            """;
+    }
 
     internal static string BuildUserPrompt(
         string presenterLine,
