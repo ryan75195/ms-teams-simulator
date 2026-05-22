@@ -1678,3 +1678,129 @@ html.is-electron .teams-app {
     transform: translate(-50%, 0);
   }
 }
+
+.past-sessions {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.past-sessions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.past-sessions-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.past-sessions-refresh:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.past-sessions-refresh:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.past-sessions-empty,
+.past-sessions-error {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.45;
+  padding: 6px 0;
+}
+
+.past-sessions-error {
+  color: #ff8a93;
+}
+
+.past-sessions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.past-session-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+
+.past-session-row.is-current {
+  border-left-color: rgba(91, 95, 199, 0.7);
+  background: rgba(91, 95, 199, 0.08);
+}
+
+.past-session-meta {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.past-session-meta strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.past-session-meta span {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 2px;
+}
+
+.past-session-actions {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.past-session-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none;
+  border-radius: 4px;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.past-session-actions a:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
