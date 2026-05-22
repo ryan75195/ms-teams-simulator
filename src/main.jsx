@@ -22,10 +22,10 @@ import {
 } from "./constants";
 import { makeParticipant } from "./helpers";
 import { useSession } from "./useSession";
+import { useLiveMic } from "./audio/useLiveMic";
 import { ChatPane } from "./components/ChatPane";
 import { ContentStage } from "./components/ContentStage";
 import { Gallery } from "./components/Gallery";
-import { LiveMicControl } from "./components/LiveMicControl";
 import { PeoplePane } from "./components/PeoplePane";
 import { Ribbon } from "./components/Ribbon";
 import { SimPanel } from "./components/SimPanel";
@@ -35,6 +35,7 @@ import "./styles.css";
 const API_URL = import.meta.env.VITE_API_URL || null;
 const WS_BASE_URL = API_URL ? API_URL.replace(/^http/, "ws") : null;
 const PARTIAL_TRANSCRIPT_CLEAR_MS = 2000;
+const MIC_ERROR_DISPLAY_MS = 6000;
 const YOU_PERSONA_ID = "you";
 
 function buildSeedChat() {
@@ -77,8 +78,10 @@ function App() {
   const reactionIdRef = useRef(0);
   const partialClearTimerRef = useRef(null);
   const slideDebounceRef = useRef(null);
+  const micErrorTimerRef = useRef(null);
   const [partialTranscript, setPartialTranscript] = useState("");
   const [slideDraft, setSlideDraft] = useState("");
+  const [micError, setMicError] = useState(null);
 
   useEffect(() => {
     if (apiMode) return;
@@ -340,9 +343,21 @@ function App() {
       if (slideDebounceRef.current) {
         window.clearTimeout(slideDebounceRef.current);
       }
+      if (micErrorTimerRef.current) {
+        window.clearTimeout(micErrorTimerRef.current);
+      }
     },
     []
   );
+
+  function reportMicError(message) {
+    setMicError(message);
+    if (micErrorTimerRef.current) window.clearTimeout(micErrorTimerRef.current);
+    micErrorTimerRef.current = window.setTimeout(
+      () => setMicError(null),
+      MIC_ERROR_DISPLAY_MS
+    );
+  }
 
   const lastSentSlideRef = useRef("");
   function handleSlideChange(text) {
@@ -362,6 +377,31 @@ function App() {
     apiMode && api.sessionId && WS_BASE_URL
       ? `${WS_BASE_URL}/sessions/${api.sessionId}/realtime`
       : null;
+
+  const {
+    state: micState,
+    start: startMic,
+    stop: stopMic,
+  } = useLiveMic({
+    wsUrl: realtimeWsUrl,
+    onPartial: handlePartialTranscript,
+    onError: reportMicError,
+  });
+
+  useEffect(() => {
+    if (!apiMode || !realtimeWsUrl) return;
+    if (!muted && micState === "idle") {
+      startMic();
+    } else if (muted && micState !== "idle") {
+      stopMic();
+    }
+  }, [muted, apiMode, realtimeWsUrl, micState, startMic, stopMic]);
+
+  useEffect(() => {
+    if (micState === "idle" && !muted) {
+      setMuted(true);
+    }
+  }, [micState, muted]);
 
   const apiParticipants = useMemo(() => {
     if (!apiMode || !api.personas) return null;
@@ -477,11 +517,11 @@ function App() {
           )}
         </div>
 
-        <LiveMicControl
-          enabled={apiMode && api.connected && !!realtimeWsUrl}
-          wsUrl={realtimeWsUrl}
-          onPartial={handlePartialTranscript}
-        />
+        {micError && (
+          <div className="mic-error" role="alert">
+            {micError}
+          </div>
+        )}
 
         {partialTranscript && rightPane !== "transcript" && (
           <div className="partial-transcript" aria-live="polite">
