@@ -1,5 +1,6 @@
 import { Button, Slider, Switch } from "@fluentui/react-components";
 import { DismissRegular } from "@fluentui/react-icons";
+import { PastSessionsList } from "./PastSessionsList";
 
 export function SimPanel({
   audienceSize,
@@ -19,6 +20,9 @@ export function SimPanel({
   slideText,
   onSlideTextChange,
   slideEditable,
+  apiUrl,
+  currentSessionId,
+  visible,
   onClose,
 }) {
   return (
@@ -112,6 +116,11 @@ export function SimPanel({
             />
           </label>
         )}
+        <PastSessionsList
+          apiUrl={apiUrl}
+          visible={visible}
+          currentSessionId={currentSessionId}
+        />
       </div>
     </aside>
   );

@@ -573,6 +573,9 @@ function App() {
             slideText={slideDraft}
             onSlideTextChange={handleSlideChange}
             slideEditable={apiMode}
+            apiUrl={API_URL}
+            currentSessionId={api.sessionId}
+            visible={debugOpen}
             onClose={() => setDebugOpen(false)}
           />
         )}
