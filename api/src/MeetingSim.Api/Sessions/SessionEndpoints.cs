@@ -1,4 +1,6 @@
 ﻿using MeetingSim.Api.Contracts;
+using MeetingSim.Api.Sessions.Interfaces;
+using MeetingSim.Core.Personas.Interfaces;
 using MeetingSim.Core.Sessions;
 using MeetingSim.Core.Sessions.Interfaces;
 
@@ -23,10 +25,26 @@ public static class SessionEndpoints
         return app;
     }
 
-    private static IResult CreateSession(CreateSessionRequest request, ISessionStore store)
+    private static async Task<IResult> CreateSession(
+        CreateSessionRequest request,
+        ISessionStore store,
+        IPersonaRepository personas,
+        ISessionArchive archive,
+        CancellationToken cancellationToken)
     {
         var settings = request.Settings ?? DefaultSettings;
         var session = store.Create(request.Title, request.AudienceSize, settings);
+        var manifest = new SessionManifest(
+            Id: session.Id,
+            Title: session.Title,
+            AudienceSize: session.AudienceSize,
+            Seed: session.Seed,
+            Settings: session.Settings,
+            Roster: personas.Roster,
+            StartedAt: session.StartedAt,
+            LastEventAt: null,
+            EndedAt: null);
+        await archive.SaveManifest(manifest, cancellationToken).ConfigureAwait(false);
         return Results.Created($"/sessions/{session.Id}", session);
     }
 
@@ -43,8 +61,18 @@ public static class SessionEndpoints
             ? Results.Ok(session)
             : Results.NotFound();
 
-    private static IResult DeleteSession(Guid id, ISessionStore store)
-        => store.Remove(id)
-            ? Results.NoContent()
-            : Results.NotFound();
+    private static async Task<IResult> DeleteSession(
+        Guid id,
+        ISessionStore store,
+        ISessionArchive archive,
+        CancellationToken cancellationToken)
+    {
+        var existing = await archive.LoadManifest(id, cancellationToken).ConfigureAwait(false);
+        if (existing is not null)
+        {
+            var ended = existing with { EndedAt = DateTimeOffset.UtcNow };
+            await archive.SaveManifest(ended, cancellationToken).ConfigureAwait(false);
+        }
+        return store.Remove(id) ? Results.NoContent() : Results.NotFound();
+    }
 }

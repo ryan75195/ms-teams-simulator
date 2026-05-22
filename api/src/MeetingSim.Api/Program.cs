@@ -5,6 +5,7 @@ using MeetingSim.Api.Personas;
 using MeetingSim.Api.Realtime;
 using MeetingSim.Api.Realtime.Interfaces;
 using MeetingSim.Api.Sessions;
+using MeetingSim.Api.Sessions.Interfaces;
 using MeetingSim.Api.Transcription;
 using MeetingSim.Api.Transcription.Interfaces;
 using MeetingSim.Core;
@@ -19,6 +20,7 @@ builder.Services.AddSingleton<ITranscriptionService, OpenAITranscriptionService>
 builder.Services.AddSingleton<IRealtimeTranscriptionClient, OpenAIRealtimeTranscriptionClient>();
 builder.Services.AddSingleton<ITextToSpeechService, OpenAITextToSpeechService>();
 builder.Services.AddSingleton<IAudioStore, AudioStore>();
+builder.Services.AddSingleton<ISessionArchive, FileSystemSessionArchive>();
 builder.Services.AddCors(options => options.AddPolicy(RendererCorsPolicy, policy => policy
     .WithOrigins(
         "http://127.0.0.1:5173",
