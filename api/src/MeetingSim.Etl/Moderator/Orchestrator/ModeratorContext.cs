@@ -11,4 +11,5 @@ public sealed record ModeratorContext(
     IReadOnlyList<string> RecentSpeakers,
     IReadOnlyList<Persona> Roster,
     IReadOnlyDictionary<string, IReadOnlyList<string>> PersonaPreviousLines,
-    string? CalledOutPersonaId = null);
+    string? CalledOutPersonaId = null,
+    string? CurrentSlide = null);

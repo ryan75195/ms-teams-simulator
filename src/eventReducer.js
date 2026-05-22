@@ -7,6 +7,7 @@ export const initialView = {
   chat: [],
   reactions: [],
   transcripts: [],
+  currentSlide: "",
   lastEventId: 0,
 };
 
@@ -54,6 +55,8 @@ export function reduceEvent(state, event) {
         transcripts: [...state.transcripts, event].slice(-MAX_TRANSCRIPT_HISTORY),
         lastEventId,
       };
+    case "slide-update":
+      return { ...state, currentSlide: event.text ?? "", lastEventId };
     default:
       return state;
   }

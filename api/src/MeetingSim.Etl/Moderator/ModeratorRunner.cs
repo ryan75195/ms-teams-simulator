@@ -22,6 +22,7 @@ internal static class ModeratorRunner
     private const string TranscriptKind = "transcript";
     private const string SpeakKind = "speak";
     private const string HandRaiseKind = "hand-raise";
+    private const string SlideUpdateKind = "slide-update";
     private static readonly TimeSpan ActiveResponderTtl = TimeSpan.FromSeconds(20);
 
     public static async Task<int> Run(string[] args)
@@ -188,6 +189,19 @@ internal static class ModeratorRunner
         {
             HandleHandRaise(evt, state);
         }
+        else if (kind == SlideUpdateKind)
+        {
+            HandleSlideUpdate(evt, state);
+        }
+    }
+
+    private static void HandleSlideUpdate(JsonElement evt, ModeratorState state)
+    {
+        if (!evt.TryGetProperty("text", out var textEl))
+        {
+            return;
+        }
+        state.CurrentSlide = textEl.GetString();
     }
 
     private static async Task HandleTranscript(
@@ -223,7 +237,8 @@ internal static class ModeratorRunner
             RecentSpeakers: state.RecentSpeakers.ToList(),
             Roster: roster,
             PersonaPreviousLines: state.PersonaPreviousLines,
-            CalledOutPersonaId: calledOut);
+            CalledOutPersonaId: calledOut,
+            CurrentSlide: state.CurrentSlide);
 
         await orchestrator.Decide(context).ConfigureAwait(false);
     }
@@ -318,6 +333,8 @@ internal static class ModeratorRunner
         public HashSet<string> HandsUp { get; } = new(StringComparer.Ordinal);
 
         public string? ActiveResponderId { get; set; }
+
+        public string? CurrentSlide { get; set; }
 
         public DateTimeOffset? ActiveResponderExpiresAt { get; set; }
 

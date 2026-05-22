@@ -7,5 +7,6 @@ public interface IPersonaVoiceService
         string presenterLine,
         IReadOnlyList<string> recentChunks,
         IReadOnlyList<string> personaPreviousLines,
+        string? currentSlide = null,
         CancellationToken cancellationToken = default);
 }

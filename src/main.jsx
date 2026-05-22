@@ -76,7 +76,9 @@ function App() {
   const chatIdRef = useRef(100);
   const reactionIdRef = useRef(0);
   const partialClearTimerRef = useRef(null);
+  const slideDebounceRef = useRef(null);
   const [partialTranscript, setPartialTranscript] = useState("");
+  const [slideDraft, setSlideDraft] = useState("");
 
   useEffect(() => {
     if (apiMode) return;
@@ -335,9 +337,26 @@ function App() {
       if (partialClearTimerRef.current) {
         window.clearTimeout(partialClearTimerRef.current);
       }
+      if (slideDebounceRef.current) {
+        window.clearTimeout(slideDebounceRef.current);
+      }
     },
     []
   );
+
+  const lastSentSlideRef = useRef("");
+  function handleSlideChange(text) {
+    setSlideDraft(text);
+    if (!apiMode) return;
+    if (slideDebounceRef.current) {
+      window.clearTimeout(slideDebounceRef.current);
+    }
+    slideDebounceRef.current = window.setTimeout(() => {
+      if (text === lastSentSlideRef.current) return;
+      lastSentSlideRef.current = text;
+      api.send.event({ kind: "slide-update", text });
+    }, 600);
+  }
 
   const realtimeWsUrl =
     apiMode && api.sessionId && WS_BASE_URL
@@ -496,6 +515,9 @@ function App() {
             handsCount={handsCount}
             onApplause={applauseSurge}
             onQA={questionRush}
+            slideText={slideDraft}
+            onSlideTextChange={handleSlideChange}
+            slideEditable={apiMode}
             onClose={() => setDebugOpen(false)}
           />
         )}

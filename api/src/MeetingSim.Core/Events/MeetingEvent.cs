@@ -8,4 +8,5 @@ namespace MeetingSim.Core.Events;
 [JsonDerivedType(typeof(ChatMessageEvent), "chat")]
 [JsonDerivedType(typeof(ReactionEvent), "reaction")]
 [JsonDerivedType(typeof(TranscriptChunkEvent), "transcript")]
+[JsonDerivedType(typeof(SlideUpdateEvent), "slide-update")]
 public abstract record MeetingEvent(long Id, DateTimeOffset Ts);

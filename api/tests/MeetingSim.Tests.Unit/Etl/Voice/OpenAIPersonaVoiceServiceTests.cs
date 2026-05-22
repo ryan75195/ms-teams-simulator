@@ -110,6 +110,35 @@ public class OpenAIPersonaVoiceServiceTests
     }
 
     [Test]
+    public void Should_include_slide_block_when_current_slide_provided()
+    {
+        var prompt = OpenAIPersonaVoiceService.BuildUserPrompt(
+            "Any reactions?",
+            recentChunks: [],
+            personaPreviousLines: [],
+            currentSlide: "Q2 Sales Report\n- EMEA pipeline +18.4% QoQ");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(prompt, Does.Contain("Slide on screen"));
+            Assert.That(prompt, Does.Contain("EMEA pipeline +18.4% QoQ"));
+        });
+    }
+
+    [Test]
+    public void Should_omit_slide_block_when_slide_empty_or_null()
+    {
+        var none = OpenAIPersonaVoiceService.BuildUserPrompt("Hi.", [], [], currentSlide: null);
+        var blank = OpenAIPersonaVoiceService.BuildUserPrompt("Hi.", [], [], currentSlide: "   ");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(none, Does.Not.Contain("Slide on screen"));
+            Assert.That(blank, Does.Not.Contain("Slide on screen"));
+        });
+    }
+
+    [Test]
     public void Should_keep_only_tail_of_recent_chunks_when_history_grows_large()
     {
         var chunks = new[] { "ALPHA", "BRAVO", "CHARLIE", "DELTA", "ECHO", "FOXTROT", "GOLF" };

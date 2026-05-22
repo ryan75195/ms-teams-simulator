@@ -1619,3 +1619,32 @@ html.is-electron .teams-app {
 .transcript-text {
   display: block;
 }
+
+.sim-field--slide {
+  margin-top: 4px;
+}
+
+.sim-slide {
+  display: block;
+  width: 100%;
+  min-height: 110px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.sim-slide:focus {
+  outline: none;
+  border-color: rgba(91, 95, 199, 0.7);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sim-slide::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}

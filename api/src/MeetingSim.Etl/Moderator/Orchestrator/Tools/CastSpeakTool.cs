@@ -51,7 +51,7 @@ internal sealed class CastSpeakTool : IModeratorTool
             : (IReadOnlyList<string>)[];
 
         var text = await _voice
-            .GenerateLine(personaId, context.PresenterLine, context.RecentChunks, previousLines, cancellationToken)
+            .GenerateLine(personaId, context.PresenterLine, context.RecentChunks, previousLines, context.CurrentSlide, cancellationToken)
             .ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(text))

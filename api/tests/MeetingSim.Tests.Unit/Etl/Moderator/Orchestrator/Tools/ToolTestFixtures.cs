@@ -53,14 +53,18 @@ internal sealed class FakePersonaVoiceService : IPersonaVoiceService
 
     public List<string> RequestedPersonas { get; } = [];
 
+    public List<string?> RequestedSlides { get; } = [];
+
     public Task<string> GenerateLine(
         string personaId,
         string presenterLine,
         IReadOnlyList<string> recentChunks,
         IReadOnlyList<string> personaPreviousLines,
+        string? currentSlide = null,
         CancellationToken cancellationToken = default)
     {
         RequestedPersonas.Add(personaId);
+        RequestedSlides.Add(currentSlide);
         return Task.FromResult(CannedResponse ?? string.Empty);
     }
 }

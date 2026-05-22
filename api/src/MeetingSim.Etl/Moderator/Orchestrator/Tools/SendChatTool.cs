@@ -74,7 +74,7 @@ internal sealed class SendChatTool : IModeratorTool
             ? lines
             : (IReadOnlyList<string>)[];
         return await _voice
-            .GenerateLine(personaId, context.PresenterLine, context.RecentChunks, previousLines, cancellationToken)
+            .GenerateLine(personaId, context.PresenterLine, context.RecentChunks, previousLines, context.CurrentSlide, cancellationToken)
             .ConfigureAwait(false);
     }
 
