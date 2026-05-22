@@ -1,5 +1,6 @@
 ﻿using MeetingSim.Api.Audio;
 using MeetingSim.Api.Audio.Interfaces;
+using MeetingSim.Api.Decisions;
 using MeetingSim.Api.Events;
 using MeetingSim.Api.Personas;
 using MeetingSim.Api.Realtime;
@@ -40,6 +41,8 @@ app.MapEventEndpoints();
 app.MapTranscribeEndpoints();
 app.MapRealtimeEndpoints();
 app.MapAudioEndpoints();
+app.MapDecisionEndpoints();
+app.MapArchiveEndpoints();
 app.MapHub<SessionHub>("/hubs/session");
 
 app.Run();

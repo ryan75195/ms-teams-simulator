@@ -118,6 +118,24 @@ internal sealed class FileSystemSessionArchive : ISessionArchive
         return ids;
     }
 
+    public async IAsyncEnumerable<string> ReadEventLines(
+        Guid sessionId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var path = Path.Combine(SessionDirectory(sessionId), "events.jsonl");
+        if (!File.Exists(path))
+        {
+            yield break;
+        }
+        using var reader = new StreamReader(path, Encoding.UTF8);
+        while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
+        {
+            yield return line;
+        }
+    }
+
+    public string GetSessionDirectory(Guid sessionId) => SessionDirectory(sessionId);
+
     private async Task AppendLine(Guid sessionId, string path, string line, CancellationToken cancellationToken)
     {
         var sem = _locks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));

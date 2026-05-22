@@ -1,5 +1,8 @@
 ﻿using System.ClientModel;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using MeetingSim.Core.Personas;
+using MeetingSim.Etl.Moderator.Interfaces;
 using OpenAI.Chat;
 
 namespace MeetingSim.Etl.Moderator.Orchestrator;
@@ -8,15 +11,18 @@ internal sealed class ModeratorOrchestrator
 {
     private readonly ChatClient _client;
     private readonly ModeratorToolRegistry _registry;
+    private readonly IDecisionPoster _decisionPoster;
     private readonly string _systemPrompt;
 
     public ModeratorOrchestrator(
         ChatClient client,
         ModeratorToolRegistry registry,
+        IDecisionPoster decisionPoster,
         IReadOnlyList<Persona> roster)
     {
         _client = client;
         _registry = registry;
+        _decisionPoster = decisionPoster;
         _systemPrompt = BuildSystemPrompt(roster);
     }
 
@@ -44,10 +50,58 @@ internal sealed class ModeratorOrchestrator
 
         await LogDecision(result.Value).ConfigureAwait(false);
 
+        var decisionRecord = BuildDecisionRecord(context, result.Value);
+        try
+        {
+            await _decisionPoster.PostDecision(decisionRecord, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            await Console.Error.WriteLineAsync($"[orchestrator] decision POST failed: {ex.Message}").ConfigureAwait(false);
+        }
+
         foreach (var call in result.Value.ToolCalls)
         {
             await _registry.Dispatch(call, context, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private static JsonObject BuildDecisionRecord(ModeratorContext context, ChatCompletion completion)
+    {
+        var toolCalls = new JsonArray();
+        foreach (var call in completion.ToolCalls)
+        {
+            JsonNode? args = null;
+            try
+            {
+                args = JsonNode.Parse(call.FunctionArguments.ToString());
+            }
+            catch (JsonException)
+            {
+                args = JsonValue.Create(call.FunctionArguments.ToString());
+            }
+            toolCalls.Add(new JsonObject
+            {
+                ["name"] = call.FunctionName,
+                ["args"] = args,
+            });
+        }
+
+        return new JsonObject
+        {
+            ["ts"] = DateTimeOffset.UtcNow.ToString("O"),
+            ["presenterLine"] = context.PresenterLine,
+            ["state"] = new JsonObject
+            {
+                ["activeResponderId"] = context.ActiveResponderId,
+                ["handsUp"] = new JsonArray(context.HandsUp.Select(h => (JsonNode?)JsonValue.Create(h)).ToArray()),
+                ["recentSpeakers"] = new JsonArray(context.RecentSpeakers.Select(s => (JsonNode?)JsonValue.Create(s)).ToArray()),
+                ["calledOutPersonaId"] = context.CalledOutPersonaId,
+                ["hasSlide"] = !string.IsNullOrWhiteSpace(context.CurrentSlide),
+            },
+            ["reasoning"] = completion.Content.Count > 0 ? completion.Content[0].Text : null,
+            ["toolCalls"] = toolCalls,
+        };
     }
 
     internal static string BuildSystemPrompt(IReadOnlyList<Persona> roster)

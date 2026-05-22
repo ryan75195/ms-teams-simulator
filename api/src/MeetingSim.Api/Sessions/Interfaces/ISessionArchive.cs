@@ -17,5 +17,9 @@ public interface ISessionArchive
 
     Task<Stream?> OpenAudio(Guid sessionId, long eventId, CancellationToken cancellationToken = default);
 
+    IAsyncEnumerable<string> ReadEventLines(Guid sessionId, CancellationToken cancellationToken = default);
+
+    string GetSessionDirectory(Guid sessionId);
+
     IReadOnlyList<Guid> ListArchivedSessions();
 }

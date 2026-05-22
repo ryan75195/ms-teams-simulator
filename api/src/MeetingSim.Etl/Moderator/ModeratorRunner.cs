@@ -43,11 +43,13 @@ internal static class ModeratorRunner
         }
 
         var chat = new ChatClient(model: parsed.ModelName, apiKey: parsed.ApiKey);
-        IEventPoster poster = new ApiEventClient(http, parsed.SessionId);
+        var apiClient = new ApiEventClient(http, parsed.SessionId);
+        IEventPoster poster = apiClient;
+        IDecisionPoster decisionPoster = apiClient;
         IPersonaVoiceService voice = new OpenAIPersonaVoiceService(chat, personas.Roster);
 
         var registry = BuildRegistry(personas.Roster, poster, voice);
-        var orchestrator = new ModeratorOrchestrator(chat, registry, personas.Roster);
+        var orchestrator = new ModeratorOrchestrator(chat, registry, decisionPoster, personas.Roster);
 
         return await RunConnection(parsed, personas, orchestrator).ConfigureAwait(false);
     }
