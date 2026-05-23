@@ -47,6 +47,19 @@ internal sealed class FakeEventPoster : IEventPoster
     }
 }
 
+internal sealed class FakeModeratorStateMutator : IModeratorStateMutator
+{
+    public List<string?> Calls { get; } = [];
+
+    public string? Current { get; private set; }
+
+    public void SetActiveResponder(string? personaId)
+    {
+        Calls.Add(personaId);
+        Current = personaId;
+    }
+}
+
 internal sealed class FakePersonaVoiceService : IPersonaVoiceService
 {
     public string? CannedResponse { get; set; } = "default line";

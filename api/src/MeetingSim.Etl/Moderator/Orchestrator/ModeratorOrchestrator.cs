@@ -96,7 +96,6 @@ internal sealed class ModeratorOrchestrator
                 ["activeResponderId"] = context.ActiveResponderId,
                 ["handsUp"] = new JsonArray(context.HandsUp.Select(h => (JsonNode?)JsonValue.Create(h)).ToArray()),
                 ["recentSpeakers"] = new JsonArray(context.RecentSpeakers.Select(s => (JsonNode?)JsonValue.Create(s)).ToArray()),
-                ["calledOutPersonaId"] = context.CalledOutPersonaId,
                 ["hasSlide"] = !string.IsNullOrWhiteSpace(context.CurrentSlide),
             },
             ["reasoning"] = completion.Content.Count > 0 ? completion.Content[0].Text : null,
@@ -113,20 +112,27 @@ internal sealed class ModeratorOrchestrator
                 .Select(p => $"- {p.Name} (id: {p.Id}) — {DescribeArchetype(p.Archetype)}{FormatBio(p.Bio)}"));
 
         return $"""
-            You are the audience director for a presentation simulator. The presenter just said something; decide how the audience reacts by calling one tool per persona who reacts.
+            You are the audience director for a presentation simulator. The presenter just said something; decide how the audience reacts by calling one tool per persona who reacts. You also own the room's state — who is the active responder, whose hand is still relevant.
 
             Personas in the audience (only these may react):
             {personas}
 
-            Each tool's description tells you when to use it. Three principles override everything else:
+            Each tool's description tells you when to use it. These principles override everything else:
 
-            1. Speaking out loud interrupts the presenter — reserve `cast_speak` for direct name callouts and active-dialogue continuations only. If a persona wants to engage, they raise their hand and wait.
-            2. The active responder (if set) owns the dialogue. Every follow-up from the presenter — pleasantries, answers, clarifying questions — keeps going to them until the presenter names someone else or pivots to a brand-new topic.
-            3. Direct questions to the room ALWAYS get a response, even small ones. "Can anyone hear me?", "is this working?", "are we good to start?", "ready?" — at least one persona should `send_chat` a quick confirmation ("Hearing you fine" / "All good") or `react` with 👍. NEVER return only `stay_quiet` when the presenter asked the room a yes/no or check-in question.
+            1. Speaking out loud (cast_speak) interrupts the presenter. Reserve it for personas the presenter is directly addressing, and for active-responder continuations. If a persona wants to engage but wasn't addressed, they raise_hand and wait.
+            2. Inferring the addressed persona is your job. If the presenter says a name that looks like one of the personas above — allowing for speech-to-text variance ("Brian" → Bryan, "Annie"/"Anich" → Anuj, "Ava" → Eva, "Cheryl" → Serena) — they are addressing that persona. cast_speak for them.
+            3. The active responder owns dialogue continuity. When an active responder is set AND the presenter's line is a question, request, clarification, or pleasantry, you MUST cast_speak that persona this turn. They have to actually respond — set_active_responder alone is not a reaction. Only stop addressing the active responder when the presenter explicitly names a different persona or pivots topics; then call set_active_responder with no persona_id to clear. cast_speak sets the speaker as active responder by default — only call set_active_responder to override.
+            4. Hands go stale. If a persona's hand has been up across multiple turns and the topic has shifted, call lower_hand to bring it down. Don't let hands accumulate.
+            5. Direct questions to the room ALWAYS get a response, even small ones. "Can anyone hear me?", "is this working?", "ready?" — at least one persona should send_chat a confirmation or react with 👍. NEVER return only stay_quiet when the presenter asked the room a yes/no or check-in question.
 
-            Reserve `stay_quiet` for genuinely contentless lines: throat-clearing ("um", "OK so"), half-sentences, obvious STT garbles. A substantive line from the presenter — a question, a claim, a transition between agenda items — should get at least one reaction (hand-raise, chat, or react).
+            Reserve stay_quiet for genuinely contentless lines: throat-clearing ("um", "OK so"), half-sentences, obvious STT garbles. A substantive line — a question, a claim, a transition — should get at least one reaction.
 
-            You MUST call at least one tool. You MAY call multiple tools in parallel — for example, one persona raising their hand while another reacts with an emoji.
+            Context modes — most turns are "complete" (presenter just finished a thought). You may also receive:
+            - "partial" — presenter is mid-sentence. cast_speak is FORBIDDEN (would cut them off). Only react, raise_hand, lower_hand, send_chat, set_active_responder, or stay_quiet.
+            - "silence" — presenter has paused. Quiet ambient reactions only. cast_speak is FORBIDDEN — don't break the silence with audio. A curious persona may send_chat to fill, or stay_quiet is fine.
+            - "slide" — presenter changed slides. React to the new content (👍/🤔, raise_hand for questions, lower_hand for stale hands). cast_speak only if a persona has a strong reaction tied directly to the new slide.
+
+            You MUST call at least one tool. You MAY call multiple tools in parallel.
             """;
     }
 
@@ -137,16 +143,36 @@ internal sealed class ModeratorOrchestrator
         AppendSlide(sections, context.CurrentSlide);
         AppendContext(sections, context.RecentChunks);
         AppendState(sections, context);
+        sections.Add(BuildPresenterSection(context));
 
-        sections.Add($"""
+        return string.Join("\n\n", sections);
+    }
+
+    private static string BuildPresenterSection(ModeratorContext context) => context.Mode switch
+    {
+        "partial" => $"""
+            MODE: partial. Presenter is mid-sentence (transcript so far):
+            > {context.PresenterLine}
+
+            Do NOT cast_speak — you'd cut them off. Use react, raise_hand, send_chat, lower_hand, or stay_quiet.
+            """,
+        "silence" => """
+            MODE: silence. Presenter has paused — no speech right now.
+
+            Quiet ambient only. cast_speak FORBIDDEN. Default to stay_quiet for short pauses. If interjecting, vary it: a thinking emoji from a curious persona, a brief encouraging chat from a cheerleader, a quick clarifying chat from a skeptic. Don't reach for the same persona or the same phrasing each silence — silences are rare; treat each as a fresh moment, not a template fill.
+            """,
+        "slide" => """
+            MODE: slide. Presenter just changed slides. Audience reads the new content above.
+
+            React to the slide: 👍/🤔, raise_hand for questions, lower_hand for stale hands. cast_speak only for a persona with a strong reaction tied directly to this slide.
+            """,
+        _ => $"""
             Presenter just said:
             > {context.PresenterLine}
 
             Decide which tools to call.
-            """);
-
-        return string.Join("\n\n", sections);
-    }
+            """,
+    };
 
     private static void AppendSlide(List<string> sections, string? slide)
     {
@@ -179,21 +205,17 @@ internal sealed class ModeratorOrchestrator
     private static void AppendState(List<string> sections, ModeratorContext context)
     {
         var lines = new List<string>();
-        if (!string.IsNullOrEmpty(context.CalledOutPersonaId))
-        {
-            lines.Add($"DIRECT CALLOUT: the presenter named '{context.CalledOutPersonaId}' by their first name — cast_speak for them is mandatory this turn.");
-        }
         if (!string.IsNullOrEmpty(context.ActiveResponderId))
         {
-            lines.Add($"Active responder (in dialogue with presenter): {context.ActiveResponderId}");
+            lines.Add($"Active responder (locked in dialogue with presenter): {context.ActiveResponderId}");
         }
         if (context.HandsUp.Count > 0)
         {
-            lines.Add($"Hands up (waiting to be called on by name): {string.Join(", ", context.HandsUp)}");
+            lines.Add($"Hands up (waiting to be addressed by name): {string.Join(", ", context.HandsUp)}");
         }
         if (context.RecentSpeakers.Count > 0)
         {
-            lines.Add($"Recently spoke (prefer variety unless they're the active responder): {string.Join(", ", context.RecentSpeakers)}");
+            lines.Add($"Recently spoke: {string.Join(", ", context.RecentSpeakers)}");
         }
         if (lines.Count == 0)
         {

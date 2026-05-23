@@ -29,3 +29,10 @@ teams-*.png
 # Session archive — local transcripts, audio, decisions
 /sessions/
 /api/sessions/
+api/src/MeetingSim.Api/Sessions/
+
+# Local env overrides
+.env.local
+
+# Claude Code scratch
+.claude/scheduled_tasks.lock

@@ -87,6 +87,7 @@ public static class EventEndpoints
         ChatMessageEventRequest c => new ChatMessageEvent(id, ts, c.PersonaId, c.Text),
         ReactionEventRequest r => new ReactionEvent(id, ts, r.Tile, r.Emoji),
         SlideUpdateEventRequest u => new SlideUpdateEvent(id, ts, u.Text),
+        SilenceTickEventRequest s => new SilenceTickEvent(id, ts, s.Seconds),
         _ => throw new InvalidOperationException($"Unknown event request type {request.GetType().Name}"),
     };
 }
