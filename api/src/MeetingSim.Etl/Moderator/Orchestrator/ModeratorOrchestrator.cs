@@ -110,7 +110,7 @@ internal sealed class ModeratorOrchestrator
             "\n",
             roster
                 .Where(p => p.Archetype != Archetype.User)
-                .Select(p => $"- {p.Name} (id: {p.Id}) — {DescribeArchetype(p.Archetype)}"));
+                .Select(p => $"- {p.Name} (id: {p.Id}) — {DescribeArchetype(p.Archetype)}{FormatBio(p.Bio)}"));
 
         return $"""
             You are the audience director for a presentation simulator. The presenter just said something; decide how the audience reacts by calling one tool per persona who reacts.
@@ -222,4 +222,7 @@ internal sealed class ModeratorOrchestrator
         Archetype.Silent => "silent. Mostly listens.",
         _ => "audience member.",
     };
+
+    private static string FormatBio(string? bio)
+        => string.IsNullOrWhiteSpace(bio) ? string.Empty : $" {bio}";
 }
