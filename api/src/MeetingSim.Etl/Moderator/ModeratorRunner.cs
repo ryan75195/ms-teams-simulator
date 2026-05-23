@@ -19,6 +19,7 @@ internal static class ModeratorRunner
     private const int RecentSpeakersCap = 8;
     private const int RecentChunksWindow = 6;
     private const int PreviousLinesPerPersona = 3;
+    private const int RecentDecisionsCap = 5;
     private const string TranscriptKind = "transcript";
     private const string TranscriptMilestoneKind = "transcript-milestone";
     private const string SpeakKind = "speak";
@@ -251,9 +252,11 @@ internal static class ModeratorRunner
             Roster: roster,
             PersonaPreviousLines: state.PersonaPreviousLines,
             CurrentSlide: state.CurrentSlide,
-            Mode: mode);
+            Mode: mode,
+            RecentDecisions: state.RecentDecisions.ToList());
 
-        await orchestrator.Decide(context).ConfigureAwait(false);
+        var summary = await orchestrator.Decide(context).ConfigureAwait(false);
+        state.AppendRecentDecision(summary, RecentDecisionsCap);
     }
 
     private static void HandleSpeakBroadcast(JsonElement evt, ModeratorState state)
@@ -344,6 +347,8 @@ internal static class ModeratorRunner
 
         public HashSet<string> HandsUp { get; } = new(StringComparer.Ordinal);
 
+        public Queue<string> RecentDecisions { get; } = new();
+
         public string? ActiveResponderId { get; set; }
 
         public string? CurrentSlide { get; set; }
@@ -353,6 +358,19 @@ internal static class ModeratorRunner
         public void SetActiveResponder(string? personaId)
         {
             ActiveResponderId = string.IsNullOrEmpty(personaId) ? null : personaId;
+        }
+
+        public void AppendRecentDecision(string summary, int cap)
+        {
+            if (string.IsNullOrWhiteSpace(summary))
+            {
+                return;
+            }
+            RecentDecisions.Enqueue(summary);
+            while (RecentDecisions.Count > cap)
+            {
+                RecentDecisions.Dequeue();
+            }
         }
 
         public void AdvanceRecentSpeakers(string personaId, int window)

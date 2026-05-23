@@ -139,6 +139,68 @@ public class OpenAIPersonaVoiceServiceTests
     }
 
     [Test]
+    public void Should_accept_a_valid_short_line()
+    {
+        var persona = new Persona("anuj", "Anuj Kapoor", "#3F628E", Archetype.Skeptic, IsRoster: true);
+
+        var result = OpenAIPersonaVoiceService.ValidateLine(persona, "Where does the 18% come from?");
+
+        Assert.That(result, Is.Null);
+    }
+
+    [Test]
+    public void Should_reject_empty_voice_output()
+    {
+        var persona = new Persona("anuj", "Anuj Kapoor", "#3F628E", Archetype.Skeptic, IsRoster: true);
+
+        Assert.That(OpenAIPersonaVoiceService.ValidateLine(persona, "   "), Does.Contain("empty"));
+    }
+
+    [Test]
+    public void Should_reject_voice_output_exceeding_the_length_cap()
+    {
+        var persona = new Persona("anuj", "Anuj Kapoor", "#3F628E", Archetype.Skeptic, IsRoster: true);
+        var tooLong = new string('a', OpenAIPersonaVoiceService.MaxLineLength + 1);
+
+        Assert.That(OpenAIPersonaVoiceService.ValidateLine(persona, tooLong), Does.Contain("too long"));
+    }
+
+    [Test]
+    public void Should_reject_voice_output_containing_stage_directions()
+    {
+        var persona = new Persona("anuj", "Anuj Kapoor", "#3F628E", Archetype.Skeptic, IsRoster: true);
+
+        var result = OpenAIPersonaVoiceService.ValidateLine(persona, "*leans forward* What's the CAC payback?");
+
+        Assert.That(result, Does.Contain("stage direction"));
+    }
+
+    [Test]
+    public void Should_reject_voice_output_that_starts_with_a_greeting()
+    {
+        var persona = new Persona("anuj", "Anuj Kapoor", "#3F628E", Archetype.Skeptic, IsRoster: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(OpenAIPersonaVoiceService.ValidateLine(persona, "Hi everyone, quick question."), Does.Contain("greeting"));
+            Assert.That(OpenAIPersonaVoiceService.ValidateLine(persona, "Hello team."), Does.Contain("greeting"));
+            Assert.That(OpenAIPersonaVoiceService.ValidateLine(persona, "Hey folks."), Does.Contain("greeting"));
+        });
+    }
+
+    [Test]
+    public void Should_reject_voice_output_that_self_introduces()
+    {
+        var persona = new Persona("anuj", "Anuj Kapoor", "#3F628E", Archetype.Skeptic, IsRoster: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(OpenAIPersonaVoiceService.ValidateLine(persona, "As Anuj, I'd want to see the variance."), Does.Contain("self-introduces"));
+            Assert.That(OpenAIPersonaVoiceService.ValidateLine(persona, "I'm Anuj, and the CAC matters."), Does.Contain("self-introduces"));
+        });
+    }
+
+    [Test]
     public void Should_keep_only_tail_of_recent_chunks_when_history_grows_large()
     {
         var chunks = new[] { "ALPHA", "BRAVO", "CHARLIE", "DELTA", "ECHO", "FOXTROT", "GOLF" };

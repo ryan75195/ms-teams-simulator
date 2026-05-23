@@ -8,6 +8,7 @@ namespace MeetingSim.Etl.Voice;
 internal sealed class OpenAIPersonaVoiceService : IPersonaVoiceService
 {
     public const string DefaultModelName = "gpt-4o-mini";
+    public const int MaxLineLength = 350;
 
     private const int RecentChunkLimit = 4;
     private const int PreviousLinesLimit = 3;
@@ -37,18 +38,67 @@ internal sealed class OpenAIPersonaVoiceService : IPersonaVoiceService
         var systemPrompt = BuildSystemPrompt(persona);
         var userPrompt = BuildUserPrompt(presenterLine, recentChunks, personaPreviousLines, currentSlide);
 
-        ChatMessage[] messages =
-        [
+        var first = await Generate(systemPrompt, userPrompt, retryNote: null, cancellationToken).ConfigureAwait(false);
+        var validation = ValidateLine(persona, first);
+        if (validation is null)
+        {
+            return first;
+        }
+        await Console.Out.WriteLineAsync($"  [voice] {persona.Id}: {validation} — retrying").ConfigureAwait(false);
+        var retried = await Generate(systemPrompt, userPrompt, retryNote: validation, cancellationToken).ConfigureAwait(false);
+        return ValidateLine(persona, retried) is null ? retried : Truncate(retried, MaxLineLength);
+    }
+
+    private async Task<string> Generate(string systemPrompt, string userPrompt, string? retryNote, CancellationToken cancellationToken)
+    {
+        var messages = new List<ChatMessage>
+        {
             new SystemChatMessage(systemPrompt),
             new UserChatMessage(userPrompt),
-        ];
-
+        };
+        if (retryNote is not null)
+        {
+            messages.Add(new SystemChatMessage($"Your previous attempt failed validation: {retryNote}. Try again — keep it short, no stage directions, no greetings."));
+        }
         ClientResult<ChatCompletion> completion = await _client
             .CompleteChatAsync(messages, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
-
         return completion.Value.Content[0].Text.Trim();
     }
+
+    internal static string? ValidateLine(Persona persona, string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return "empty response";
+        }
+        if (text.Length > MaxLineLength)
+        {
+            return $"too long ({text.Length} chars, max {MaxLineLength})";
+        }
+        if (text.Contains('*', StringComparison.Ordinal))
+        {
+            return "contains stage direction (*...*)";
+        }
+        var trimmed = text.TrimStart();
+        if (trimmed.StartsWith("hi ", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("hello", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("hey ", StringComparison.OrdinalIgnoreCase))
+        {
+            return "starts with greeting";
+        }
+        var firstName = persona.Name.Split(' ')[0];
+        if (trimmed.StartsWith($"as {firstName}", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith($"i'm {firstName}", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith($"i am {firstName}", StringComparison.OrdinalIgnoreCase))
+        {
+            return "self-introduces";
+        }
+        return null;
+    }
+
+    private static string Truncate(string text, int maxLength)
+        => text.Length <= maxLength ? text : text[..maxLength].TrimEnd() + "…";
 
     internal static string BuildSystemPrompt(Persona persona)
     {

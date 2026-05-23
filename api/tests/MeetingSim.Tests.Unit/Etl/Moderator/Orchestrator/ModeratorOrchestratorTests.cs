@@ -61,7 +61,7 @@ public class ModeratorOrchestratorTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(prompt, Does.Contain("Speaking out loud"));
+            Assert.That(prompt, Does.Contain("Address routing"));
             Assert.That(prompt, Does.Contain("active responder"));
             Assert.That(prompt, Does.Contain("stay_quiet"));
         });
@@ -138,10 +138,56 @@ public class ModeratorOrchestratorTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(prompt, Does.Contain("Inferring the addressed persona"));
+            Assert.That(prompt, Does.Contain("Address routing"));
             Assert.That(prompt, Does.Contain("speech-to-text variance"));
         });
     }
+
+    [Test]
+    public void Should_repeat_the_active_responder_must_rule_near_the_end_of_the_system_prompt()
+    {
+        var prompt = ModeratorOrchestrator.BuildSystemPrompt(Roster());
+        var firstIndex = prompt.IndexOf("active responder", StringComparison.Ordinal);
+        var lastIndex = prompt.LastIndexOf("active responder", StringComparison.Ordinal);
+
+        Assert.That(lastIndex, Is.GreaterThan(firstIndex), "active responder rule should appear at top and bottom of the prompt to mitigate context rot");
+        Assert.That(prompt[lastIndex..], Does.Contain("cast_speak"));
+    }
+
+    [Test]
+    public void Should_include_recent_decisions_in_the_user_prompt_when_provided()
+    {
+        var prompt = ModeratorOrchestrator.BuildUserPrompt(
+            ContextWithRecentDecisions(new[] { "complete: cast_speak(anuj)", "silence: send_chat(serena)" }));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(prompt, Does.Contain("Your recent decisions"));
+            Assert.That(prompt, Does.Contain("cast_speak(anuj)"));
+            Assert.That(prompt, Does.Contain("send_chat(serena)"));
+        });
+    }
+
+    [Test]
+    public void Should_omit_recent_decisions_section_when_empty()
+    {
+        var prompt = ModeratorOrchestrator.BuildUserPrompt(Context());
+
+        Assert.That(prompt, Does.Not.Contain("Your recent decisions"));
+    }
+
+    private static ModeratorContext ContextWithRecentDecisions(IReadOnlyList<string> recent) => new(
+        SessionId: Guid.NewGuid(),
+        PresenterLine: "Hello.",
+        RecentChunks: [],
+        ActiveResponderId: null,
+        HandsUp: new HashSet<string>(),
+        RecentSpeakers: [],
+        Roster: Roster(),
+        PersonaPreviousLines: new Dictionary<string, IReadOnlyList<string>>(),
+        CurrentSlide: null,
+        Mode: "complete",
+        RecentDecisions: recent);
 
     [Test]
     public void Should_describe_set_active_responder_and_lower_hand_in_the_system_prompt()

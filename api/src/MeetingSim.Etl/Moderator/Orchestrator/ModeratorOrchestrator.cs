@@ -26,14 +26,34 @@ internal sealed class ModeratorOrchestrator
         _systemPrompt = BuildSystemPrompt(roster);
     }
 
-    public async Task Decide(ModeratorContext context, CancellationToken cancellationToken = default)
+    public async Task<string> Decide(ModeratorContext context, CancellationToken cancellationToken = default)
     {
-        var messages = new ChatMessage[]
-        {
-            new SystemChatMessage(_systemPrompt),
-            new UserChatMessage(BuildUserPrompt(context)),
-        };
+        var options = BuildOptions();
+        var firstResult = await CallModel(context, options, retryNudge: null, cancellationToken)
+            .ConfigureAwait(false);
+        var finalResult = firstResult;
 
+        var nudge = ValidateDecision(context, firstResult);
+        if (nudge is not null)
+        {
+            await Console.Out.WriteLineAsync($"  [validation] {nudge}").ConfigureAwait(false);
+            finalResult = await CallModel(context, options, nudge, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await LogDecision(finalResult).ConfigureAwait(false);
+        await PostDecision(context, finalResult, cancellationToken).ConfigureAwait(false);
+
+        foreach (var call in finalResult.ToolCalls)
+        {
+            await _registry.Dispatch(call, context, cancellationToken).ConfigureAwait(false);
+        }
+
+        return SummariseDecision(context.Mode, finalResult);
+    }
+
+    private ChatCompletionOptions BuildOptions()
+    {
         var options = new ChatCompletionOptions
         {
             ToolChoice = ChatToolChoice.CreateRequiredChoice(),
@@ -43,14 +63,69 @@ internal sealed class ModeratorOrchestrator
         {
             options.Tools.Add(definition);
         }
+        return options;
+    }
 
+    private async Task<ChatCompletion> CallModel(
+        ModeratorContext context,
+        ChatCompletionOptions options,
+        string? retryNudge,
+        CancellationToken cancellationToken)
+    {
+        var messages = new List<ChatMessage>
+        {
+            new SystemChatMessage(_systemPrompt),
+            new UserChatMessage(BuildUserPrompt(context)),
+        };
+        if (retryNudge is not null)
+        {
+            messages.Add(new SystemChatMessage(retryNudge));
+        }
         ClientResult<ChatCompletion> result = await _client
             .CompleteChatAsync(messages, options, cancellationToken)
             .ConfigureAwait(false);
+        return result.Value;
+    }
 
-        await LogDecision(result.Value).ConfigureAwait(false);
+    internal static string? ValidateDecision(ModeratorContext context, ChatCompletion completion)
+    {
+        if (context.Mode != "complete" || string.IsNullOrEmpty(context.ActiveResponderId))
+        {
+            return null;
+        }
+        foreach (var call in completion.ToolCalls)
+        {
+            if (call.FunctionName == "cast_speak"
+                && TryReadPersonaIdArg(call.FunctionArguments.ToString(), out var id)
+                && id == context.ActiveResponderId)
+            {
+                return null;
+            }
+        }
+        return $"Your previous decision did not cast_speak for the active responder '{context.ActiveResponderId}'. The presenter is in dialogue with them and just said: \"{context.PresenterLine}\". Decide again and cast_speak the active responder this turn unless the presenter explicitly addressed someone else.";
+    }
 
-        var decisionRecord = BuildDecisionRecord(context, result.Value);
+    private static bool TryReadPersonaIdArg(string argsJson, out string personaId)
+    {
+        personaId = string.Empty;
+        try
+        {
+            using var doc = JsonDocument.Parse(argsJson);
+            if (doc.RootElement.TryGetProperty("persona_id", out var el) && el.GetString() is { Length: > 0 } id)
+            {
+                personaId = id;
+                return true;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+        return false;
+    }
+
+    private async Task PostDecision(ModeratorContext context, ChatCompletion completion, CancellationToken cancellationToken)
+    {
+        var decisionRecord = BuildDecisionRecord(context, completion);
         try
         {
             await _decisionPoster.PostDecision(decisionRecord, cancellationToken).ConfigureAwait(false);
@@ -59,11 +134,16 @@ internal sealed class ModeratorOrchestrator
         {
             await Console.Error.WriteLineAsync($"[orchestrator] decision POST failed: {ex.Message}").ConfigureAwait(false);
         }
+    }
 
-        foreach (var call in result.Value.ToolCalls)
-        {
-            await _registry.Dispatch(call, context, cancellationToken).ConfigureAwait(false);
-        }
+    internal static string SummariseDecision(string mode, ChatCompletion completion)
+    {
+        var parts = completion.ToolCalls.Select(c =>
+            TryReadPersonaIdArg(c.FunctionArguments.ToString(), out var id) && id.Length > 0
+                ? $"{c.FunctionName}({id})"
+                : c.FunctionName);
+        var joined = string.Join(", ", parts);
+        return string.IsNullOrEmpty(joined) ? $"{mode}: (no tools)" : $"{mode}: {joined}";
     }
 
     private static JsonObject BuildDecisionRecord(ModeratorContext context, ChatCompletion completion)
@@ -114,25 +194,25 @@ internal sealed class ModeratorOrchestrator
         return $"""
             You are the audience director for a presentation simulator. The presenter just said something; decide how the audience reacts by calling one tool per persona who reacts. You also own the room's state — who is the active responder, whose hand is still relevant.
 
+            Critical rule (do not violate): when an active responder is set AND the presenter's line is anything other than an explicit pivot or callout of another persona, that responder MUST cast_speak this turn. set_active_responder alone is not a reaction.
+
             Personas in the audience (only these may react):
             {personas}
 
-            Each tool's description tells you when to use it. These principles override everything else:
+            Three principles:
 
-            1. Speaking out loud (cast_speak) interrupts the presenter. Reserve it for personas the presenter is directly addressing, and for active-responder continuations. If a persona wants to engage but wasn't addressed, they raise_hand and wait.
-            2. Inferring the addressed persona is your job. If the presenter says a name that looks like one of the personas above — allowing for speech-to-text variance ("Brian" → Bryan, "Annie"/"Anich" → Anuj, "Ava" → Eva, "Cheryl" → Serena) — they are addressing that persona. cast_speak for them.
-            3. The active responder owns dialogue continuity. When an active responder is set AND the presenter's line is a question, request, clarification, or pleasantry, you MUST cast_speak that persona this turn. They have to actually respond — set_active_responder alone is not a reaction. Only stop addressing the active responder when the presenter explicitly names a different persona or pivots topics; then call set_active_responder with no persona_id to clear. cast_speak sets the speaker as active responder by default — only call set_active_responder to override.
-            4. Hands go stale. If a persona's hand has been up across multiple turns and the topic has shifted, call lower_hand to bring it down. Don't let hands accumulate.
-            5. Direct questions to the room ALWAYS get a response, even small ones. "Can anyone hear me?", "is this working?", "ready?" — at least one persona should send_chat a confirmation or react with 👍. NEVER return only stay_quiet when the presenter asked the room a yes/no or check-in question.
+            1. Address routing & dialogue continuity. Identify who the presenter is addressing — including speech-to-text variance ("Brian" → Bryan, "Annie"/"Anich" → Anuj, "Ava" → Eva, "Cheryl" → Serena) — and cast_speak them. When an active responder is set, presenter follow-ups (questions, clarifications, pleasantries) MUST cast_speak that persona; clear with set_active_responder (no persona_id) only when the presenter explicitly names someone else or pivots topics. cast_speak sets the speaker as active responder by default.
 
-            Reserve stay_quiet for genuinely contentless lines: throat-clearing ("um", "OK so"), half-sentences, obvious STT garbles. A substantive line — a question, a claim, a transition — should get at least one reaction.
+            2. State hygiene. Lower stale hands on topic shifts. Don't repeat the same persona/text you've just used (recent decisions appear in the user prompt — vary). Reserve stay_quiet for genuinely contentless lines (throat-clearing, half-sentences, STT garbles).
 
-            Context modes — most turns are "complete" (presenter just finished a thought). You may also receive:
-            - "partial" — presenter is mid-sentence. cast_speak is FORBIDDEN (would cut them off). Only react, raise_hand, lower_hand, send_chat, set_active_responder, or stay_quiet.
-            - "silence" — presenter has paused. Quiet ambient reactions only. cast_speak is FORBIDDEN — don't break the silence with audio. A curious persona may send_chat to fill, or stay_quiet is fine.
-            - "slide" — presenter changed slides. React to the new content (👍/🤔, raise_hand for questions, lower_hand for stale hands). cast_speak only if a persona has a strong reaction tied directly to the new slide.
+            3. Engagement floor. Direct questions to the room ALWAYS get at least one reaction (send_chat confirmation or react 👍). Substantive presenter lines — questions, claims, transitions — get at least one reaction.
 
-            You MUST call at least one tool. You MAY call multiple tools in parallel.
+            Context modes — most turns are "complete". You may also receive:
+            - "partial" — presenter is mid-sentence. cast_speak FORBIDDEN. Only react, raise_hand, lower_hand, send_chat, set_active_responder, or stay_quiet.
+            - "silence" — presenter has paused. Quiet ambient only. cast_speak FORBIDDEN. Default to stay_quiet for short pauses; if interjecting, vary persona and phrasing across silences.
+            - "slide" — presenter changed slides. React to the new content (reactions, raise_hand for questions, lower_hand for stale hands). cast_speak only for a persona with a strong reaction tied directly to this slide.
+
+            You MUST call at least one tool. You MAY call multiple in parallel. Final reminder: if there is an active responder and the presenter's line is not a clear pivot, cast_speak them this turn — no exceptions.
             """;
     }
 
@@ -143,9 +223,23 @@ internal sealed class ModeratorOrchestrator
         AppendSlide(sections, context.CurrentSlide);
         AppendContext(sections, context.RecentChunks);
         AppendState(sections, context);
+        AppendRecentDecisions(sections, context.RecentDecisions);
         sections.Add(BuildPresenterSection(context));
 
         return string.Join("\n\n", sections);
+    }
+
+    private static void AppendRecentDecisions(List<string> sections, IReadOnlyList<string>? recentDecisions)
+    {
+        if (recentDecisions is null || recentDecisions.Count == 0)
+        {
+            return;
+        }
+        var lines = string.Join("\n", recentDecisions.Select(d => $"- {d}"));
+        sections.Add($"""
+            Your recent decisions (don't repeat the same persona/text):
+            {lines}
+            """);
     }
 
     private static string BuildPresenterSection(ModeratorContext context) => context.Mode switch
