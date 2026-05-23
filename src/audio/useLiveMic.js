@@ -3,10 +3,12 @@ import workletUrl from "./pcmWorklet.js?url";
 
 const TARGET_SAMPLE_RATE = 24000;
 const IDLE_TIMEOUT_MS = 90_000;
-const IDLE_CHECK_INTERVAL_MS = 5_000;
+const IDLE_CHECK_INTERVAL_MS = 1_000;
+const SILENCE_TICK_THRESHOLD_MS = 4_000;
+const SILENCE_TICK_COOLDOWN_MS = 20_000;
 const AUDIO_THRESHOLD_PCM16 = 1500;
 
-export function useLiveMic({ wsUrl, onPartial, onError }) {
+export function useLiveMic({ wsUrl, onPartial, onError, onSilence }) {
   const [state, setState] = useState("idle");
   const runningRef = useRef(false);
   const ctxRef = useRef(null);
@@ -15,6 +17,8 @@ export function useLiveMic({ wsUrl, onPartial, onError }) {
   const nodeRef = useRef(null);
   const sourceRef = useRef(null);
   const lastAudioAtRef = useRef(0);
+  const silenceFiredRef = useRef(false);
+  const lastSilenceFiredAtRef = useRef(0);
   const idleCheckRef = useRef(null);
 
   const stop = useCallback(() => {
@@ -121,6 +125,7 @@ export function useLiveMic({ wsUrl, onPartial, onError }) {
       node.port.onmessage = (e) => {
         if (frameHasAudio(e.data)) {
           lastAudioAtRef.current = Date.now();
+          silenceFiredRef.current = false;
         }
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           wsRef.current.send(e.data);
@@ -129,11 +134,22 @@ export function useLiveMic({ wsUrl, onPartial, onError }) {
       source.connect(node);
 
       lastAudioAtRef.current = Date.now();
+      silenceFiredRef.current = false;
       idleCheckRef.current = window.setInterval(() => {
         if (!runningRef.current) return;
-        if (Date.now() - lastAudioAtRef.current >= IDLE_TIMEOUT_MS) {
+        const gap = Date.now() - lastAudioAtRef.current;
+        if (gap >= IDLE_TIMEOUT_MS) {
           onError?.(`Live mic auto-paused after ${IDLE_TIMEOUT_MS / 1000}s of silence — click to resume.`);
           stop();
+          return;
+        }
+        if (gap >= SILENCE_TICK_THRESHOLD_MS && !silenceFiredRef.current) {
+          const now = Date.now();
+          if (now - lastSilenceFiredAtRef.current >= SILENCE_TICK_COOLDOWN_MS) {
+            silenceFiredRef.current = true;
+            lastSilenceFiredAtRef.current = now;
+            onSilence?.(Math.floor(gap / 1000));
+          }
         }
       }, IDLE_CHECK_INTERVAL_MS);
 
@@ -142,7 +158,7 @@ export function useLiveMic({ wsUrl, onPartial, onError }) {
       onError?.(e?.message ?? String(e));
       stop();
     }
-  }, [wsUrl, onPartial, onError, stop]);
+  }, [wsUrl, onPartial, onError, onSilence, stop]);
 
   useEffect(
     () => () => {

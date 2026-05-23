@@ -14,7 +14,6 @@ public class ModeratorOrchestratorTests
         IReadOnlyCollection<string>? handsUp = null,
         IReadOnlyList<string>? recentSpeakers = null,
         IReadOnlyList<string>? recentChunks = null,
-        string? calledOut = null,
         string? currentSlide = null)
         => new(
             SessionId: Guid.NewGuid(),
@@ -25,7 +24,6 @@ public class ModeratorOrchestratorTests
             RecentSpeakers: recentSpeakers ?? [],
             Roster: Roster(),
             PersonaPreviousLines: new Dictionary<string, IReadOnlyList<string>>(),
-            CalledOutPersonaId: calledOut,
             CurrentSlide: currentSlide);
 
     [Test]
@@ -63,7 +61,7 @@ public class ModeratorOrchestratorTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(prompt, Does.Contain("Speaking out loud interrupts"));
+            Assert.That(prompt, Does.Contain("Speaking out loud"));
             Assert.That(prompt, Does.Contain("active responder"));
             Assert.That(prompt, Does.Contain("stay_quiet"));
         });
@@ -134,25 +132,27 @@ public class ModeratorOrchestratorTests
     }
 
     [Test]
-    public void Should_emit_direct_callout_block_when_a_persona_is_named()
+    public void Should_instruct_the_model_to_infer_addressed_personas_with_stt_variance()
     {
-        var prompt = ModeratorOrchestrator.BuildUserPrompt(
-            Context(presenterLine: "Anuj, thoughts?", calledOut: "anuj"));
+        var prompt = ModeratorOrchestrator.BuildSystemPrompt(Roster());
 
         Assert.Multiple(() =>
         {
-            Assert.That(prompt, Does.Contain("DIRECT CALLOUT"));
-            Assert.That(prompt, Does.Contain("'anuj'"));
-            Assert.That(prompt, Does.Contain("cast_speak"));
+            Assert.That(prompt, Does.Contain("Inferring the addressed persona"));
+            Assert.That(prompt, Does.Contain("speech-to-text variance"));
         });
     }
 
     [Test]
-    public void Should_omit_direct_callout_block_when_no_persona_is_named()
+    public void Should_describe_set_active_responder_and_lower_hand_in_the_system_prompt()
     {
-        var prompt = ModeratorOrchestrator.BuildUserPrompt(Context(calledOut: null));
+        var prompt = ModeratorOrchestrator.BuildSystemPrompt(Roster());
 
-        Assert.That(prompt, Does.Not.Contain("DIRECT CALLOUT"));
+        Assert.Multiple(() =>
+        {
+            Assert.That(prompt, Does.Contain("set_active_responder"));
+            Assert.That(prompt, Does.Contain("lower_hand"));
+        });
     }
 
     [Test]

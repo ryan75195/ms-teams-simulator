@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { FluentProvider, teamsDarkTheme } from "@fluentui/react-components";
 import { OptionsRegular } from "@fluentui/react-icons";
@@ -392,6 +392,14 @@ function App() {
       ? `${WS_BASE_URL}/sessions/${api.sessionId}/realtime`
       : null;
 
+  const reportSilence = useCallback(
+    (seconds) => {
+      if (!apiMode) return;
+      api.send.event({ kind: "silence-tick", seconds });
+    },
+    [apiMode, api.send]
+  );
+
   const {
     state: micState,
     start: startMic,
@@ -400,6 +408,7 @@ function App() {
     wsUrl: realtimeWsUrl,
     onPartial: handlePartialTranscript,
     onError: reportMicError,
+    onSilence: reportSilence,
   });
 
   useEffect(() => {
@@ -411,8 +420,11 @@ function App() {
     }
   }, [muted, apiMode, realtimeWsUrl, micState, startMic, stopMic]);
 
+  const previousMicStateRef = useRef("idle");
   useEffect(() => {
-    if (micState === "idle" && !muted) {
+    const prev = previousMicStateRef.current;
+    previousMicStateRef.current = micState;
+    if (micState === "idle" && prev !== "idle" && !muted) {
       setMuted(true);
     }
   }, [micState, muted]);

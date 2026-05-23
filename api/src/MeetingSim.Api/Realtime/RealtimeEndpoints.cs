@@ -80,6 +80,8 @@ public static class RealtimeEndpoints
         CancellationToken cancellationToken)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(BrowserReceiveBufferSize);
+        var frameCount = 0;
+        var byteCount = 0L;
         try
         {
             await using var frame = new MemoryStream();
@@ -94,6 +96,9 @@ public static class RealtimeEndpoints
                 }
                 if (messageType == WebSocketMessageType.Binary && frame.Length > 0)
                 {
+                    frameCount++;
+                    byteCount += frame.Length;
+                    await LogFrameProgress(frameCount, byteCount).ConfigureAwait(false);
                     await session.SendAudio(frame.ToArray(), cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -106,8 +111,22 @@ public static class RealtimeEndpoints
         }
         finally
         {
+            await Console.Out
+                .WriteLineAsync($"[realtime] -> pump ended, {frameCount} frames / {byteCount} bytes")
+                .ConfigureAwait(false);
             ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    private static async Task LogFrameProgress(int frameCount, long byteCount)
+    {
+        if (frameCount != 1 && frameCount % 50 != 0)
+        {
+            return;
+        }
+        await Console.Out
+            .WriteLineAsync($"[realtime] -> {frameCount} audio frames sent ({byteCount} bytes total)")
+            .ConfigureAwait(false);
     }
 
     private static async Task<WebSocketMessageType> ReadOneBrowserFrame(
@@ -133,6 +152,8 @@ public static class RealtimeEndpoints
         }
     }
 
+    private const int PartialMilestoneWordThreshold = 8;
+
     private static async Task PumpOpenAIToBrowser(
         Guid sessionId,
         IRealtimeTranscriptionSession session,
@@ -141,6 +162,8 @@ public static class RealtimeEndpoints
         IHubContext<SessionHub> hub,
         CancellationToken cancellationToken)
     {
+        var accumulator = new System.Text.StringBuilder();
+        var milestoneFired = false;
         try
         {
             await foreach (var evt in session.Events.ReadAllAsync(cancellationToken).ConfigureAwait(false))
@@ -149,10 +172,19 @@ public static class RealtimeEndpoints
                 {
                     await BroadcastFinal(sessionId, evt.Text, events, hub, cancellationToken)
                         .ConfigureAwait(false);
+                    accumulator.Clear();
+                    milestoneFired = false;
                 }
-                else if (browser.State == WebSocketState.Open)
+                else
                 {
-                    await SendPartialToBrowser(browser, evt.Text, cancellationToken).ConfigureAwait(false);
+                    accumulator.Append(evt.Text);
+                    milestoneFired = await MaybeBroadcastMilestone(
+                        sessionId, accumulator.ToString(), milestoneFired, events, hub, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (browser.State == WebSocketState.Open)
+                    {
+                        await SendPartialToBrowser(browser, evt.Text, cancellationToken).ConfigureAwait(false);
+                    }
                 }
             }
         }
@@ -162,6 +194,50 @@ public static class RealtimeEndpoints
         catch (OperationCanceledException)
         {
         }
+    }
+
+    private static async Task<bool> MaybeBroadcastMilestone(
+        Guid sessionId,
+        string accumulated,
+        bool alreadyFired,
+        IEventStore events,
+        IHubContext<SessionHub> hub,
+        CancellationToken cancellationToken)
+    {
+        if (alreadyFired)
+        {
+            return true;
+        }
+        if (CountWords(accumulated) < PartialMilestoneWordThreshold)
+        {
+            return false;
+        }
+        var appended = events.Append(sessionId, (eventId, ts) =>
+            new TranscriptMilestoneEvent(eventId, ts, accumulated));
+        await hub.Clients
+            .Group(SessionHub.GroupName(sessionId))
+            .SendAsync(SessionHub.EventMethodName, appended, cancellationToken)
+            .ConfigureAwait(false);
+        return true;
+    }
+
+    private static int CountWords(string text)
+    {
+        var count = 0;
+        var inWord = false;
+        foreach (var ch in text)
+        {
+            if (char.IsWhiteSpace(ch))
+            {
+                inWord = false;
+            }
+            else if (!inWord)
+            {
+                inWord = true;
+                count++;
+            }
+        }
+        return count;
     }
 
     private static async Task BroadcastFinal(

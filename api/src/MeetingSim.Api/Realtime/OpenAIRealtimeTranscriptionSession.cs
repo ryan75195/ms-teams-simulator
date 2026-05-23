@@ -149,10 +149,34 @@ internal sealed class OpenAIRealtimeTranscriptionSession : IRealtimeTranscriptio
             {
                 return;
             }
-            DispatchByType(typeEl.GetString(), root);
+            var type = typeEl.GetString();
+            LogIncomingEvent(type, root);
+            DispatchByType(type, root);
         }
         catch (JsonException)
         {
+        }
+    }
+
+    private static void LogIncomingEvent(string? type, JsonElement root)
+    {
+        if (type is null)
+        {
+            return;
+        }
+        if (type == "error")
+        {
+            Console.Error.WriteLine($"[realtime] OpenAI error: {root.GetRawText()}");
+            return;
+        }
+        if (type == "input_audio_buffer.speech_started"
+            || type == "input_audio_buffer.speech_stopped"
+            || type == "input_audio_buffer.committed"
+            || type == "session.created"
+            || type == "session.updated"
+            || type == CompletedEventType)
+        {
+            Console.Out.WriteLine($"[realtime] <- {type}");
         }
     }
 

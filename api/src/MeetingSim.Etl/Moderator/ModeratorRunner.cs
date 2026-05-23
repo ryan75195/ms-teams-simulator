@@ -16,14 +16,19 @@ namespace MeetingSim.Etl.Moderator;
 internal static class ModeratorRunner
 {
     private const string DefaultModelName = "gpt-4o-mini";
-    private const int RecentSpeakersWindow = 2;
+    private const int RecentSpeakersCap = 8;
     private const int RecentChunksWindow = 6;
     private const int PreviousLinesPerPersona = 3;
     private const string TranscriptKind = "transcript";
+    private const string TranscriptMilestoneKind = "transcript-milestone";
     private const string SpeakKind = "speak";
     private const string HandRaiseKind = "hand-raise";
     private const string SlideUpdateKind = "slide-update";
-    private static readonly TimeSpan ActiveResponderTtl = TimeSpan.FromSeconds(20);
+    private const string SilenceTickKind = "silence-tick";
+    private const string CompleteMode = "complete";
+    private const string PartialMode = "partial";
+    private const string SilenceMode = "silence";
+    private const string SlideMode = "slide";
 
     public static async Task<int> Run(string[] args)
     {
@@ -48,24 +53,28 @@ internal static class ModeratorRunner
         IDecisionPoster decisionPoster = apiClient;
         IPersonaVoiceService voice = new OpenAIPersonaVoiceService(chat, personas.Roster);
 
-        var registry = BuildRegistry(personas.Roster, poster, voice);
+        var state = new ModeratorState();
+        var registry = BuildRegistry(personas.Roster, poster, voice, state);
         var orchestrator = new ModeratorOrchestrator(chat, registry, decisionPoster, personas.Roster);
 
-        return await RunConnection(parsed, personas, orchestrator).ConfigureAwait(false);
+        return await RunConnection(parsed, personas, orchestrator, state).ConfigureAwait(false);
     }
 
     private static ModeratorToolRegistry BuildRegistry(
         IReadOnlyList<Persona> roster,
         IEventPoster poster,
-        IPersonaVoiceService voice)
+        IPersonaVoiceService voice,
+        IModeratorStateMutator stateMutator)
     {
         var tools = new IModeratorTool[]
         {
             new StayQuietTool(),
             new RaiseHandTool(roster, poster),
+            new LowerHandTool(roster, poster),
             new ReactTool(roster, poster),
             new SendChatTool(roster, poster, voice),
             new CastSpeakTool(roster, poster, voice),
+            new SetActiveResponderTool(roster, stateMutator),
         };
         return new ModeratorToolRegistry(tools);
     }
@@ -73,9 +82,9 @@ internal static class ModeratorRunner
     private static async Task<int> RunConnection(
         ParsedArgs parsed,
         PersonasPayload personas,
-        ModeratorOrchestrator orchestrator)
+        ModeratorOrchestrator orchestrator,
+        ModeratorState state)
     {
-        var state = new ModeratorState();
         var hubUrl = new Uri(parsed.ApiUri, "/hubs/session");
 
         await using var connection = BuildConnection(hubUrl);
@@ -179,9 +188,18 @@ internal static class ModeratorRunner
         IReadOnlyList<Persona> roster)
     {
         var kind = ReadKind(evt);
-        if (kind == TranscriptKind)
+        if (kind == TranscriptKind && TryReadTranscriptText(evt, out var finalText))
         {
-            await HandleTranscript(evt, state, orchestrator, roster).ConfigureAwait(false);
+            AppendToBuffer(state.TranscriptBuffer, finalText);
+            await Decide(state, orchestrator, roster, finalText, CompleteMode).ConfigureAwait(false);
+        }
+        else if (kind == TranscriptMilestoneKind && TryReadTranscriptText(evt, out var partialText))
+        {
+            await Decide(state, orchestrator, roster, partialText, PartialMode).ConfigureAwait(false);
+        }
+        else if (kind == SilenceTickKind)
+        {
+            await Decide(state, orchestrator, roster, string.Empty, SilenceMode).ConfigureAwait(false);
         }
         else if (kind == SpeakKind)
         {
@@ -194,6 +212,7 @@ internal static class ModeratorRunner
         else if (kind == SlideUpdateKind)
         {
             HandleSlideUpdate(evt, state);
+            await Decide(state, orchestrator, roster, string.Empty, SlideMode).ConfigureAwait(false);
         }
     }
 
@@ -206,41 +225,33 @@ internal static class ModeratorRunner
         state.CurrentSlide = textEl.GetString();
     }
 
-    private static async Task HandleTranscript(
-        JsonElement evt,
+    private static async Task Decide(
         ModeratorState state,
         ModeratorOrchestrator orchestrator,
-        IReadOnlyList<Persona> roster)
+        IReadOnlyList<Persona> roster,
+        string presenterLine,
+        string mode)
     {
-        if (!TryReadTranscriptText(evt, out var text))
-        {
-            return;
-        }
-
-        state.ExpireActiveResponder(DateTimeOffset.UtcNow);
         var seen = state.TranscriptBuffer.ToList();
-        AppendToBuffer(state.TranscriptBuffer, text);
-        var calledOut = CalloutDetector.Detect(text, roster);
 
         Console.WriteLine();
-        Console.WriteLine($"[transcript] {text}");
+        Console.WriteLine($"[{mode}] {presenterLine}");
         Console.WriteLine(
             $"  state    : active={state.ActiveResponderId ?? "-"} " +
             $"hands={(state.HandsUp.Count == 0 ? "-" : string.Join(",", state.HandsUp))} " +
-            $"recent={(state.RecentSpeakers.Count == 0 ? "-" : string.Join(",", state.RecentSpeakers))} " +
-            $"callout={calledOut ?? "-"}");
+            $"recent={(state.RecentSpeakers.Count == 0 ? "-" : string.Join(",", state.RecentSpeakers))}");
 
         var context = new ModeratorContext(
             SessionId: Guid.Empty,
-            PresenterLine: text,
+            PresenterLine: presenterLine,
             RecentChunks: seen,
             ActiveResponderId: state.ActiveResponderId,
             HandsUp: state.HandsUp,
             RecentSpeakers: state.RecentSpeakers.ToList(),
             Roster: roster,
             PersonaPreviousLines: state.PersonaPreviousLines,
-            CalledOutPersonaId: calledOut,
-            CurrentSlide: state.CurrentSlide);
+            CurrentSlide: state.CurrentSlide,
+            Mode: mode);
 
         await orchestrator.Decide(context).ConfigureAwait(false);
     }
@@ -252,8 +263,7 @@ internal static class ModeratorRunner
             return;
         }
         state.ActiveResponderId = personaId;
-        state.ActiveResponderExpiresAt = DateTimeOffset.UtcNow + ActiveResponderTtl;
-        state.AdvanceRecentSpeakers(personaId, RecentSpeakersWindow);
+        state.AdvanceRecentSpeakers(personaId, RecentSpeakersCap);
         if (evt.TryGetProperty("text", out var textEl) && textEl.GetString() is { Length: > 0 } text)
         {
             state.AppendPersonaLine(personaId, text, PreviousLinesPerPersona);
@@ -323,7 +333,7 @@ internal static class ModeratorRunner
 
     private sealed record ParsedArgs(string ApiKey, Uri ApiUri, Guid SessionId, string ModelName);
 
-    private sealed class ModeratorState
+    private sealed class ModeratorState : IModeratorStateMutator
     {
         private readonly Dictionary<string, List<string>> _personaUtterances = new(StringComparer.Ordinal);
         private readonly Dictionary<string, IReadOnlyList<string>> _personaUtterancesView = new(StringComparer.Ordinal);
@@ -338,17 +348,11 @@ internal static class ModeratorRunner
 
         public string? CurrentSlide { get; set; }
 
-        public DateTimeOffset? ActiveResponderExpiresAt { get; set; }
-
         public IReadOnlyDictionary<string, IReadOnlyList<string>> PersonaPreviousLines => _personaUtterancesView;
 
-        public void ExpireActiveResponder(DateTimeOffset now)
+        public void SetActiveResponder(string? personaId)
         {
-            if (ActiveResponderExpiresAt is { } expires && expires <= now)
-            {
-                ActiveResponderId = null;
-                ActiveResponderExpiresAt = null;
-            }
+            ActiveResponderId = string.IsNullOrEmpty(personaId) ? null : personaId;
         }
 
         public void AdvanceRecentSpeakers(string personaId, int window)
