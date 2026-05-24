@@ -1,6 +1,8 @@
 ﻿using System.Net.Http.Json;
 using System.Text.Json;
 using MeetingSim.Core.Personas;
+using MeetingSim.Etl.Chat;
+using MeetingSim.Etl.Chat.Interfaces;
 using MeetingSim.Etl.Moderator.Interfaces;
 using MeetingSim.Etl.Moderator.Orchestrator;
 using MeetingSim.Etl.Moderator.Orchestrator.Interfaces;
@@ -49,14 +51,15 @@ internal static class ModeratorRunner
         }
 
         var chat = new ChatClient(model: parsed.ModelName, apiKey: parsed.ApiKey);
+        IChatCompleter completer = new OpenAIChatCompleter(chat);
         var apiClient = new ApiEventClient(http, parsed.SessionId);
         IEventPoster poster = apiClient;
         IDecisionPoster decisionPoster = apiClient;
-        IPersonaVoiceService voice = new OpenAIPersonaVoiceService(chat, personas.Roster);
+        IPersonaVoiceService voice = new OpenAIPersonaVoiceService(completer, personas.Roster);
 
         var state = new ModeratorState();
         var registry = BuildRegistry(personas.Roster, poster, voice, state);
-        var orchestrator = new ModeratorOrchestrator(chat, registry, decisionPoster, personas.Roster);
+        var orchestrator = new ModeratorOrchestrator(completer, registry, decisionPoster, personas.Roster);
 
         return await RunConnection(parsed, personas, orchestrator, state).ConfigureAwait(false);
     }

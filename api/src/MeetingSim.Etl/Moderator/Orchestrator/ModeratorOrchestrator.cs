@@ -1,7 +1,7 @@
-﻿using System.ClientModel;
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using MeetingSim.Core.Personas;
+using MeetingSim.Etl.Chat.Interfaces;
 using MeetingSim.Etl.Moderator.Interfaces;
 using OpenAI.Chat;
 
@@ -9,18 +9,18 @@ namespace MeetingSim.Etl.Moderator.Orchestrator;
 
 internal sealed class ModeratorOrchestrator
 {
-    private readonly ChatClient _client;
+    private readonly IChatCompleter _completer;
     private readonly ModeratorToolRegistry _registry;
     private readonly IDecisionPoster _decisionPoster;
     private readonly string _systemPrompt;
 
     public ModeratorOrchestrator(
-        ChatClient client,
+        IChatCompleter completer,
         ModeratorToolRegistry registry,
         IDecisionPoster decisionPoster,
         IReadOnlyList<Persona> roster)
     {
-        _client = client;
+        _completer = completer;
         _registry = registry;
         _decisionPoster = decisionPoster;
         _systemPrompt = BuildSystemPrompt(roster);
@@ -81,10 +81,7 @@ internal sealed class ModeratorOrchestrator
         {
             messages.Add(new SystemChatMessage(retryNudge));
         }
-        ClientResult<ChatCompletion> result = await _client
-            .CompleteChatAsync(messages, options, cancellationToken)
-            .ConfigureAwait(false);
-        return result.Value;
+        return await _completer.Complete(messages, options, cancellationToken).ConfigureAwait(false);
     }
 
     internal static string? ValidateDecision(ModeratorContext context, ChatCompletion completion)

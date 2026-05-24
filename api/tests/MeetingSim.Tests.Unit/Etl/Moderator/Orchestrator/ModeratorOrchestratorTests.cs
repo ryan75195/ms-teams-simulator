@@ -1,5 +1,7 @@
 ﻿using MeetingSim.Core.Personas;
 using MeetingSim.Etl.Moderator.Orchestrator;
+using MeetingSim.Etl.Moderator.Orchestrator.Tools;
+using MeetingSim.Tests.Unit.Etl.Moderator.Orchestrator.Tools;
 
 namespace MeetingSim.Tests.Unit.Etl.Moderator.Orchestrator;
 
@@ -174,6 +176,69 @@ public class ModeratorOrchestratorTests
         var prompt = ModeratorOrchestrator.BuildUserPrompt(Context());
 
         Assert.That(prompt, Does.Not.Contain("Your recent decisions"));
+    }
+
+    [Test]
+    public async Task Should_dispatch_tool_calls_and_post_decision_on_a_happy_path_turn()
+    {
+        var completer = new FakeChatCompleter();
+        completer.Enqueue(FakeCompletionFactory.WithToolCalls(
+            ("stay_quiet", "{\"reason\":\"throat-clearing\"}")));
+        var decisions = new FakeDecisionPoster();
+        var registry = new ModeratorToolRegistry(new[] { (MeetingSim.Etl.Moderator.Orchestrator.Interfaces.IModeratorTool)new StayQuietTool() });
+        var orchestrator = new ModeratorOrchestrator(completer, registry, decisions, Roster());
+
+        var summary = await orchestrator.Decide(Context(presenterLine: "Um."));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(completer.Calls, Has.Count.EqualTo(1));
+            Assert.That(decisions.Posted, Has.Count.EqualTo(1));
+            Assert.That(summary, Is.EqualTo("complete: stay_quiet"));
+        });
+    }
+
+    [Test]
+    public async Task Should_retry_when_active_responder_is_set_but_cast_speak_is_missing()
+    {
+        var completer = new FakeChatCompleter();
+        completer.Enqueue(FakeCompletionFactory.WithToolCalls(
+            ("set_active_responder", "{\"persona_id\":\"anuj\"}")));
+        completer.Enqueue(FakeCompletionFactory.WithToolCalls(
+            ("set_active_responder", "{\"persona_id\":\"anuj\"}")));
+        var decisions = new FakeDecisionPoster();
+        var mutator = new FakeModeratorStateMutator();
+        var roster = Roster();
+        var registry = new ModeratorToolRegistry(new MeetingSim.Etl.Moderator.Orchestrator.Interfaces.IModeratorTool[]
+        {
+            new SetActiveResponderTool(roster, mutator),
+        });
+        var orchestrator = new ModeratorOrchestrator(completer, registry, decisions, roster);
+
+        await orchestrator.Decide(Context(presenterLine: "Can you expand on that?", activeResponder: "anuj"));
+
+        Assert.That(completer.Calls, Has.Count.EqualTo(2), "validation should trigger one retry");
+    }
+
+    [Test]
+    public async Task Should_not_retry_when_active_responder_is_satisfied_by_cast_speak()
+    {
+        var completer = new FakeChatCompleter();
+        completer.Enqueue(FakeCompletionFactory.WithToolCalls(
+            ("cast_speak", "{\"persona_id\":\"anuj\"}")));
+        var decisions = new FakeDecisionPoster();
+        var poster = new Tools.FakeEventPoster();
+        var voice = new Tools.FakePersonaVoiceService();
+        var roster = Roster();
+        var registry = new ModeratorToolRegistry(new MeetingSim.Etl.Moderator.Orchestrator.Interfaces.IModeratorTool[]
+        {
+            new CastSpeakTool(roster, poster, voice),
+        });
+        var orchestrator = new ModeratorOrchestrator(completer, registry, decisions, roster);
+
+        await orchestrator.Decide(Context(presenterLine: "Yeah, what about CAC?", activeResponder: "anuj"));
+
+        Assert.That(completer.Calls, Has.Count.EqualTo(1), "happy path should not retry");
     }
 
     private static ModeratorContext ContextWithRecentDecisions(IReadOnlyList<string> recent) => new(

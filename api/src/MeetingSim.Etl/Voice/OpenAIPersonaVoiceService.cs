@@ -1,5 +1,5 @@
-﻿using System.ClientModel;
-using MeetingSim.Core.Personas;
+﻿using MeetingSim.Core.Personas;
+using MeetingSim.Etl.Chat.Interfaces;
 using MeetingSim.Etl.Voice.Interfaces;
 using OpenAI.Chat;
 
@@ -13,12 +13,12 @@ internal sealed class OpenAIPersonaVoiceService : IPersonaVoiceService
     private const int RecentChunkLimit = 4;
     private const int PreviousLinesLimit = 3;
 
-    private readonly ChatClient _client;
+    private readonly IChatCompleter _completer;
     private readonly Dictionary<string, Persona> _personasById;
 
-    public OpenAIPersonaVoiceService(ChatClient client, IReadOnlyList<Persona> roster)
+    public OpenAIPersonaVoiceService(IChatCompleter completer, IReadOnlyList<Persona> roster)
     {
-        _client = client;
+        _completer = completer;
         _personasById = roster.ToDictionary(p => p.Id, StringComparer.Ordinal);
     }
 
@@ -60,10 +60,10 @@ internal sealed class OpenAIPersonaVoiceService : IPersonaVoiceService
         {
             messages.Add(new SystemChatMessage($"Your previous attempt failed validation: {retryNote}. Try again — keep it short, no stage directions, no greetings."));
         }
-        ClientResult<ChatCompletion> completion = await _client
-            .CompleteChatAsync(messages, cancellationToken: cancellationToken)
+        var completion = await _completer
+            .Complete(messages, options: null, cancellationToken)
             .ConfigureAwait(false);
-        return completion.Value.Content[0].Text.Trim();
+        return completion.Content[0].Text.Trim();
     }
 
     internal static string? ValidateLine(Persona persona, string text)

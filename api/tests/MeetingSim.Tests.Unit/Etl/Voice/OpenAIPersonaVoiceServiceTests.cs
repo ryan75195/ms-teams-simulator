@@ -1,5 +1,7 @@
 ﻿using MeetingSim.Core.Personas;
 using MeetingSim.Etl.Voice;
+using MeetingSim.Tests.Unit.Etl.Moderator.Orchestrator.Tools;
+using static MeetingSim.Tests.Unit.Etl.Moderator.Orchestrator.Tools.ToolTestFixtures;
 
 namespace MeetingSim.Tests.Unit.Etl.Voice;
 
@@ -135,6 +137,59 @@ public class OpenAIPersonaVoiceServiceTests
         {
             Assert.That(none, Does.Not.Contain("Slide on screen"));
             Assert.That(blank, Does.Not.Contain("Slide on screen"));
+        });
+    }
+
+    [Test]
+    public async Task Should_return_validated_line_on_first_try()
+    {
+        var completer = new FakeChatCompleter();
+        completer.Enqueue(FakeCompletionFactory.WithText("Where does the 18% come from?"));
+        var roster = NewRoster();
+        var sut = new OpenAIPersonaVoiceService(completer, roster);
+
+        var line = await sut.GenerateLine("anuj", "Pipeline is up 18%.", [], []);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(line, Is.EqualTo("Where does the 18% come from?"));
+            Assert.That(completer.Calls, Has.Count.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task Should_retry_when_first_response_fails_validation()
+    {
+        var completer = new FakeChatCompleter();
+        completer.Enqueue(FakeCompletionFactory.WithText("*leans forward* good point"));
+        completer.Enqueue(FakeCompletionFactory.WithText("Good point — what about CAC?"));
+        var sut = new OpenAIPersonaVoiceService(completer, NewRoster());
+
+        var line = await sut.GenerateLine("anuj", "We're up 18%.", [], []);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(line, Is.EqualTo("Good point — what about CAC?"));
+            Assert.That(completer.Calls, Has.Count.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public async Task Should_truncate_when_both_attempts_exceed_length_cap()
+    {
+        var tooLong = new string('a', OpenAIPersonaVoiceService.MaxLineLength + 50);
+        var completer = new FakeChatCompleter();
+        completer.Enqueue(FakeCompletionFactory.WithText(tooLong));
+        completer.Enqueue(FakeCompletionFactory.WithText(tooLong));
+        var sut = new OpenAIPersonaVoiceService(completer, NewRoster());
+
+        var line = await sut.GenerateLine("anuj", "Long question.", [], []);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(line.Length, Is.LessThanOrEqualTo(OpenAIPersonaVoiceService.MaxLineLength + 1));
+            Assert.That(line, Does.EndWith("…"));
+            Assert.That(completer.Calls, Has.Count.EqualTo(2));
         });
     }
 
