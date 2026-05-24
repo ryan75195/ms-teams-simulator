@@ -1,9 +1,11 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using MeetingSim.Core.Personas;
+using MeetingSim.Etl.Chat.Interfaces;
 using MeetingSim.Etl.Moderator.Interfaces;
 using MeetingSim.Etl.Moderator.Orchestrator;
 using MeetingSim.Etl.Voice.Interfaces;
+using OpenAI.Chat;
 
 namespace MeetingSim.Tests.Unit.Etl.Moderator.Orchestrator.Tools;
 
@@ -59,6 +61,60 @@ internal sealed class FakeModeratorStateMutator : IModeratorStateMutator
         Current = personaId;
     }
 }
+
+internal sealed class FakeChatCompleter : IChatCompleter
+{
+    private readonly Queue<ChatCompletion> _responses = new();
+    public List<List<ChatMessage>> Calls { get; } = [];
+
+    public void Enqueue(ChatCompletion completion) => _responses.Enqueue(completion);
+
+    public Task<ChatCompletion> Complete(
+        IEnumerable<ChatMessage> messages,
+        ChatCompletionOptions? options,
+        CancellationToken cancellationToken)
+    {
+        Calls.Add(messages.ToList());
+        if (_responses.Count == 0)
+        {
+            throw new InvalidOperationException("FakeChatCompleter has no canned responses left.");
+        }
+        return Task.FromResult(_responses.Dequeue());
+    }
+}
+
+internal sealed class FakeDecisionPoster : IDecisionPoster
+{
+    public List<JsonObject> Posted { get; } = [];
+
+    public Task PostDecision(JsonObject decision, CancellationToken cancellationToken = default)
+    {
+        Posted.Add((JsonObject)decision.DeepClone());
+        return Task.CompletedTask;
+    }
+}
+
+#pragma warning disable OPENAI001
+internal static class FakeCompletionFactory
+{
+    public static ChatCompletion WithToolCalls(params (string Name, string Args)[] calls)
+    {
+        var toolCalls = calls
+            .Select(c => ChatToolCall.CreateFunctionToolCall(
+                id: Guid.NewGuid().ToString(),
+                functionName: c.Name,
+                functionArguments: BinaryData.FromString(c.Args)))
+            .ToList();
+        return OpenAIChatModelFactory.ChatCompletion(toolCalls: toolCalls);
+    }
+
+    public static ChatCompletion WithText(string text)
+    {
+        var part = ChatMessageContentPart.CreateTextPart(text);
+        return OpenAIChatModelFactory.ChatCompletion(content: new ChatMessageContent(part));
+    }
+}
+#pragma warning restore OPENAI001
 
 internal sealed class FakePersonaVoiceService : IPersonaVoiceService
 {

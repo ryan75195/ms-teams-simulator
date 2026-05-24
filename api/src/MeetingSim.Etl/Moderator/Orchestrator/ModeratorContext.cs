@@ -12,4 +12,5 @@ public sealed record ModeratorContext(
     IReadOnlyList<Persona> Roster,
     IReadOnlyDictionary<string, IReadOnlyList<string>> PersonaPreviousLines,
     string? CurrentSlide = null,
-    string Mode = "complete");
+    string Mode = "complete",
+    IReadOnlyList<string>? RecentDecisions = null);
