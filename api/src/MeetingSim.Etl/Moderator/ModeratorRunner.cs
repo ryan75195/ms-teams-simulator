@@ -43,16 +43,26 @@ internal static class ModeratorRunner
 
         using var http = new HttpClient { BaseAddress = parsed.ApiUri };
 
-        var personas = await FetchPersonas(http, parsed.SessionId).ConfigureAwait(false);
+        var sessionId = await ResolveSessionId(http, parsed.SessionId).ConfigureAwait(false);
+        if (sessionId is null)
+        {
+            await Console.Error.WriteLineAsync(
+                "No active sessions found on /sessions. Start the renderer first, or pass an explicit session-id.")
+                .ConfigureAwait(false);
+            return 1;
+        }
+        var resolved = parsed with { SessionId = sessionId };
+
+        var personas = await FetchPersonas(http, resolved.SessionId!.Value).ConfigureAwait(false);
         if (personas is null || personas.Roster.Count == 0)
         {
-            await Console.Error.WriteLineAsync($"Failed to fetch personas for session {parsed.SessionId}.");
+            await Console.Error.WriteLineAsync($"Failed to fetch personas for session {resolved.SessionId}.");
             return 1;
         }
 
-        var chat = new ChatClient(model: parsed.ModelName, apiKey: parsed.ApiKey);
+        var chat = new ChatClient(model: resolved.ModelName, apiKey: resolved.ApiKey);
         IChatCompleter completer = new OpenAIChatCompleter(chat);
-        var apiClient = new ApiEventClient(http, parsed.SessionId);
+        var apiClient = new ApiEventClient(http, resolved.SessionId!.Value);
         IEventPoster poster = apiClient;
         IDecisionPoster decisionPoster = apiClient;
         IPersonaVoiceService voice = new OpenAIPersonaVoiceService(completer, personas.Roster);
@@ -61,8 +71,39 @@ internal static class ModeratorRunner
         var registry = BuildRegistry(personas.Roster, poster, voice, state);
         var orchestrator = new ModeratorOrchestrator(completer, registry, decisionPoster, personas.Roster);
 
-        return await RunConnection(parsed, personas, orchestrator, state).ConfigureAwait(false);
+        return await RunConnection(resolved, personas, orchestrator, state).ConfigureAwait(false);
     }
+
+    internal static async Task<Guid?> ResolveSessionId(HttpClient http, Guid? requested)
+    {
+        if (requested is not null)
+        {
+            return requested;
+        }
+        var sessions = await http.GetFromJsonAsync<JsonElement[]>("/sessions").ConfigureAwait(false);
+        if (sessions is null || sessions.Length == 0)
+        {
+            return null;
+        }
+        JsonElement newest = sessions[0];
+        var newestStart = ReadStartedAt(newest);
+        for (var i = 1; i < sessions.Length; i++)
+        {
+            var candidate = sessions[i];
+            var candidateStart = ReadStartedAt(candidate);
+            if (candidateStart > newestStart)
+            {
+                newest = candidate;
+                newestStart = candidateStart;
+            }
+        }
+        return newest.GetProperty("id").GetGuid();
+    }
+
+    private static DateTimeOffset ReadStartedAt(JsonElement session)
+        => session.TryGetProperty("startedAt", out var el) && el.ValueKind == JsonValueKind.String
+            ? el.GetDateTimeOffset()
+            : DateTimeOffset.MinValue;
 
     private static ModeratorToolRegistry BuildRegistry(
         IReadOnlyList<Persona> roster,
@@ -98,7 +139,7 @@ internal static class ModeratorRunner
         Console.WriteLine($"Moderator model: {parsed.ModelName}");
         Console.WriteLine($"Connecting to {hubUrl} for session {parsed.SessionId}…");
         await connection.StartAsync().ConfigureAwait(false);
-        await connection.InvokeAsync("JoinSession", parsed.SessionId).ConfigureAwait(false);
+        await connection.InvokeAsync("JoinSession", parsed.SessionId!.Value).ConfigureAwait(false);
         Console.WriteLine($"Live with {personas.Roster.Count} personas. Listening for transcript events. Ctrl+C to stop.");
 
         await WaitForCancelKey().ConfigureAwait(false);
@@ -115,9 +156,9 @@ internal static class ModeratorRunner
             return null;
         }
 
-        if (args.Length < 2)
+        if (args.Length < 1)
         {
-            Console.Error.WriteLine("Usage: moderator <api-url> <session-id> [model]");
+            Console.Error.WriteLine("Usage: moderator <api-url> [session-id|auto] [model]");
             return null;
         }
 
@@ -127,10 +168,15 @@ internal static class ModeratorRunner
             return null;
         }
 
-        if (!Guid.TryParse(args[1], out var sessionId))
+        Guid? sessionId = null;
+        if (args.Length > 1 && !string.Equals(args[1], "auto", StringComparison.OrdinalIgnoreCase))
         {
-            Console.Error.WriteLine($"Invalid session-id: {args[1]}");
-            return null;
+            if (!Guid.TryParse(args[1], out var parsedId))
+            {
+                Console.Error.WriteLine($"Invalid session-id: {args[1]} (pass a guid, omit, or pass 'auto').");
+                return null;
+            }
+            sessionId = parsedId;
         }
 
         var modelName = args.Length > 2 ? args[2] : DefaultModelName;
@@ -337,7 +383,7 @@ internal static class ModeratorRunner
         }
     }
 
-    private sealed record ParsedArgs(string ApiKey, Uri ApiUri, Guid SessionId, string ModelName);
+    private sealed record ParsedArgs(string ApiKey, Uri ApiUri, Guid? SessionId, string ModelName);
 
     private sealed class ModeratorState : IModeratorStateMutator
     {
