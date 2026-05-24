@@ -1,7 +1,6 @@
 ﻿using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Connections;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
 
 namespace MeetingSim.Tests.Integration.Api.Events;
@@ -16,7 +15,7 @@ public class SessionHubBroadcastTests
     [Test]
     public async Task Should_broadcast_appended_events_to_clients_joined_to_the_session_group()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new MeetingSimAppFactory();
         using var http = factory.CreateClient();
 
         var sessionId = await CreateSessionAsync(http);
@@ -49,7 +48,7 @@ public class SessionHubBroadcastTests
     [Test]
     public async Task Should_not_broadcast_to_clients_that_did_not_join_the_session()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new MeetingSimAppFactory();
         using var http = factory.CreateClient();
 
         var subscribedSessionId = await CreateSessionAsync(http);
@@ -79,7 +78,7 @@ public class SessionHubBroadcastTests
         return session.GetProperty("id").GetGuid();
     }
 
-    private static HubConnection BuildHubConnection(WebApplicationFactory<Program> factory)
+    private static HubConnection BuildHubConnection(MeetingSimAppFactory factory)
     {
         return new HubConnectionBuilder()
             .WithUrl(new Uri(factory.Server.BaseAddress, HubRoute), options =>
